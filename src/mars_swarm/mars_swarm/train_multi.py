@@ -1,0 +1,320 @@
+import os
+import sys
+import time
+import signal
+import subprocess
+import argparse
+import numpy as np
+
+# Ensure path includes workspace packages
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from multi_env_wrapper import PettingZooSwarmEnv
+
+# --- Gazebo Launcher Helpers ---
+gazebo_process = None
+
+def start_gazebo(headless=True, multi=True):
+    global gazebo_process
+    print(f"[train_multi] Starting {'Multi-Robot' if multi else 'Single-Robot'} Gazebo simulation in background...")
+    cmd = [
+        "ros2", "launch", "mars_swarm", "spawn_multi.launch.py",
+        f"headless:={str(headless).lower()}",
+        f"multi:={str(multi).lower()}"
+    ]
+    # Launch in a separate process group so we can terminate the entire tree
+    gazebo_process = subprocess.Popen(
+        cmd,
+        preexec_fn=os.setsid
+    )
+    print("[train_multi] Gazebo process launched. Waiting for topics...")
+    time.sleep(12.0)  # Wait for Gazebo and ROS 2 bridges to fully start up
+
+    if not headless:
+        from ament_index_python.packages import get_package_share_directory
+        try:
+            rviz_config_path = os.path.join(
+                get_package_share_directory('mars_swarm'),
+                'rviz', 'namespaced_swarm.rviz'
+            )
+            print(f"[train_multi] Starting RViz2 with config: {rviz_config_path}")
+            subprocess.Popen(
+                ["rviz2", "-d", rviz_config_path, "--ros-args", "-p", "use_sim_time:=true"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"[train_multi] [WARNING] Failed to start RViz2: {e}")
+
+def kill_stale_processes():
+    import signal
+    current_pid = os.getpid()
+    for name in os.listdir('/proc'):
+        if name.isdigit():
+            pid = int(name)
+            if pid == current_pid:
+                continue
+            try:
+                with open(os.path.join('/proc', name, 'cmdline'), 'rb') as f:
+                    cmdline = f.read().decode('utf-8', errors='ignore').replace('\x00', ' ')
+                lower_cmd = cmdline.lower()
+                target_terms = ['gz sim', 'parameter_bridge', 'ros_gz_bridge', 'spawn_multi.launch.py', 'spawn_tb3.launch.py', 'ruby /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz', 'rviz2']
+                if any(term in lower_cmd for term in target_terms):
+                    os.kill(pid, signal.SIGKILL)
+            except Exception:
+                continue
+
+def shutdown_handler(signum, frame):
+    global gazebo_process
+    print("\n[train_multi] Shutdown signal received. Cleaning up...")
+    if gazebo_process:
+        print("[train_multi] Terminating Gazebo and ROS 2 launch processes...")
+        try:
+            os.killpg(os.getpgid(gazebo_process.pid), signal.SIGTERM)
+            gazebo_process.wait(timeout=3)
+        except Exception:
+            pass
+    kill_stale_processes()
+    sys.exit(0)
+
+# Register shutdown handler
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+
+# --- MAPPO RLlib Training ---
+def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
+    import ray
+    from ray.rllib.algorithms.ppo import PPOConfig
+    from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
+    from ray.tune.registry import register_env
+    
+    # 1. Initialize Ray
+    ray.init(ignore_reinit_error=True)
+    
+    # 2. Register Environment
+    def env_creator(config_dict):
+        return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150))
+        
+    register_env("mars_swarm_v0", env_creator)
+    
+    # Extract observation and action spaces from temporary env
+    print("[train_multi] Fetching environment dimensions...")
+    temp_env = PettingZooSwarmEnv(max_steps=10)
+    obs_space = temp_env.observation_space("tb1")
+    act_space = temp_env.action_space("tb1")
+    temp_env.close()
+    
+    # 3. Configure MAPPO
+    # Since robots are homogeneous, we train a single shared policy
+    config = (
+        PPOConfig()
+        .environment("mars_swarm_v0")
+        .framework("torch")
+        .env_runners(
+            num_env_runners=0,  # Must be 0 to keep Gazebo running inside the main worker process
+            rollout_fragment_length=150,
+        )
+        .training(
+            train_batch_size=300,
+            minibatch_size=64,
+            num_epochs=5,
+            lr=1e-4,
+            clip_param=0.2,
+            gamma=0.99,
+        )
+        .multi_agent(
+            policies={"shared_policy": (None, obs_space, act_space, {})},
+            policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
+        )
+        .resources(num_gpus=0)
+    )
+    
+    print("[train_multi] Starting MAPPO Training Loop...")
+    start_gazebo(headless=headless)
+    
+    algo = config.build()
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    for i in range(1, iterations + 1):
+        result = algo.train()
+        reward_mean = result.get('episode_reward_mean', float('nan'))
+        
+        # Policy loss details
+        policy_stats = result.get('info', {}).get('learner', {}).get('shared_policy', {}).get('learner_stats', {})
+        loss = policy_stats.get('policy_loss', 0.0)
+        
+        print(f"Iteration {i:2d}/{iterations} | Mean Swarm Reward: {reward_mean:.2f} | Policy Loss: {loss:.4f}")
+        
+        # Save checkpoints periodically
+        if i % 5 == 0:
+            checkpoint_path = algo.save(checkpoint_dir)
+            print(f"[train_multi] Saved checkpoint: {checkpoint_path}")
+            
+    algo.stop()
+    print("[train_multi] Training finished successfully!")
+    
+    if gazebo_process:
+        print("[train_multi] Stopping Gazebo...")
+        try:
+            os.killpg(os.getpgid(gazebo_process.pid), signal.SIGTERM)
+            gazebo_process.wait(timeout=3)
+        except Exception:
+            pass
+    kill_stale_processes()
+
+# --- Evaluation Node ---
+def run_evaluation(checkpoint_path, episodes=5, headless=False):
+    import ray
+    from ray.rllib.algorithms.algorithm import Algorithm
+    from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
+    from ray.tune.registry import register_env
+    
+    # 1. Initialize Ray
+    ray.init(ignore_reinit_error=True)
+    
+    # 2. Register Environment
+    def env_creator(config_dict):
+        return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150))
+        
+    register_env("mars_swarm_v0", env_creator)
+    
+    # 3. Load Algorithm from Checkpoint
+    print(f"[train_multi] Loading Algorithm from checkpoint: {checkpoint_path}")
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+    
+    # 4. Start Gazebo
+    start_gazebo(headless=headless)
+    
+    print("[train_multi] Initializing PettingZoo Swarm Environment for Evaluation...")
+    env = PettingZooSwarmEnv(max_steps=150)
+    
+    print(f"[train_multi] --- Running Multi-Agent Swarm Evaluation (Episodes: {episodes}) ---")
+    
+    for ep in range(1, episodes + 1):
+        obs, infos = env.reset()
+        ep_rewards = {agent: 0.0 for agent in env.possible_agents}
+        steps = 0
+        
+        print(f"\nEvaluation Episode {ep} Started.")
+        for agent in env.possible_agents:
+            print(f"  {agent} Target Goal: {env.goal_positions[agent]}")
+            
+        active = True
+        while active and steps < 150:
+            actions = {}
+            for agent in env.agents:
+                policy = algo.get_policy("shared_policy")
+                agent_obs = obs[agent]
+                act_batch, _, _ = policy.compute_actions(
+                    np.array([agent_obs]),
+                    explore=False
+                )
+                actions[agent] = act_batch[0]
+                
+            obs, rewards, terminations, truncations, infos = env.step(actions)
+            
+            for agent in rewards:
+                ep_rewards[agent] += rewards[agent]
+                
+            steps += 1
+            if len(env.agents) == 0:
+                active = False
+                
+            if steps % 20 == 0:
+                status_str = " | ".join([
+                    f"{agent}: ({infos[agent]['x']:.2f}, {infos[agent]['y']:.2f}) d={infos[agent]['goal_dist']:.2f}"
+                    for agent in env.possible_agents if agent in infos
+                ])
+                print(f"  Step {steps:3d} | {status_str}")
+                
+        print(f"Evaluation Episode {ep} Finished | Steps: {steps}")
+        for agent in env.possible_agents:
+            status = infos[agent]['status'] if agent in infos else 'INACTIVE'
+            print(f"  {agent} Reward: {ep_rewards[agent]:6.2f} | Status: {status}")
+            
+    env.close()
+    if gazebo_process:
+        print("[train_multi] Stopping Gazebo...")
+        try:
+            os.killpg(os.getpgid(gazebo_process.pid), signal.SIGTERM)
+            gazebo_process.wait(timeout=3)
+        except Exception:
+            pass
+    kill_stale_processes()
+
+# --- Main Entry Point ---
+def main():
+    parser = argparse.ArgumentParser(description="Multi-Agent Swarm Navigation for TurtleBot3 Swarm")
+    parser.add_argument('--demo', action='store_true', help="Run random action demo mode")
+    parser.add_argument('--train', action='store_true', help="Run Ray RLlib MAPPO training")
+    parser.add_argument('--evaluate', action='store_true', help="Evaluate a trained MAPPO policy checkpoint")
+    parser.add_argument('--checkpoint', type=str, default="", help="Path to checkpoint directory for evaluation")
+    parser.add_argument('--episodes', type=int, default=5, help="Number of evaluation episodes")
+    parser.add_argument('--iterations', type=int, default=15, help="Number of training iterations")
+    parser.add_argument('--gui', action='store_true', help="Run Gazebo with GUI enabled (not headless)")
+    args = parser.parse_args()
+    
+    if args.evaluate:
+        if not args.checkpoint:
+            print("[ERROR] Please specify a checkpoint path using --checkpoint <path>")
+            sys.exit(1)
+        run_evaluation(checkpoint_path=args.checkpoint, episodes=args.episodes, headless=not args.gui)
+    elif args.train:
+        run_training(iterations=args.iterations, headless=not args.gui)
+    else:
+        # Run demo mode
+        start_gazebo(headless=not args.gui)
+        
+        print("[train_multi] Initializing PettingZoo Swarm Environment...")
+        env = PettingZooSwarmEnv(max_steps=150)
+        
+        print("[train_multi] --- Running Multi-Agent Swarm Demo Mode ---")
+        
+        for ep in range(1, 6):
+            obs, infos = env.reset()
+            ep_rewards = {agent: 0.0 for agent in env.possible_agents}
+            steps = 0
+            
+            print(f"\nEpisode {ep} Started.")
+            for agent in env.possible_agents:
+                print(f"  {agent} Target Goal: {env.goal_positions[agent]}")
+                
+            active = True
+            while active and steps < 150:
+                actions = {}
+                for agent in env.agents:
+                    actions[agent] = env.action_space(agent).sample()
+                    
+                obs, rewards, terminations, truncations, infos = env.step(actions)
+                
+                for agent in rewards:
+                    ep_rewards[agent] += rewards[agent]
+                    
+                steps += 1
+                
+                if len(env.agents) == 0:
+                    active = False
+                    
+                if steps % 20 == 0:
+                    status_str = " | ".join([
+                        f"{agent}: ({infos[agent]['x']:.2f}, {infos[agent]['y']:.2f}) d={infos[agent]['goal_dist']:.2f}"
+                        for agent in env.possible_agents if agent in infos
+                    ])
+                    print(f"  Step {steps:3d} | {status_str}")
+                    
+            print(f"Episode {ep} Finished | Steps: {steps}")
+            for agent in env.possible_agents:
+                status = infos[agent]['status'] if agent in infos else 'INACTIVE'
+                print(f"  {agent} Reward: {ep_rewards[agent]:6.2f} | Status: {status}")
+                
+        env.close()
+        if gazebo_process:
+            print("[train_multi] Stopping Gazebo...")
+            try:
+                os.killpg(os.getpgid(gazebo_process.pid), signal.SIGTERM)
+                gazebo_process.wait(timeout=3)
+            except Exception:
+                pass
+        kill_stale_processes()
+
+if __name__ == "__main__":
+    main()

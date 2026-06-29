@@ -1,0 +1,337 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="coffee_shop">
+
+    <!-- ── Gazebo Sim Plugins ────────────────────────────────────────── -->
+    <plugin
+      filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- ── Sun light (inline) ────────────────────────────────────────── -->
+    <light name='sun' type='directional'>
+      <cast_shadows>1</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.8 0.8 0.8 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- ── Ground Plane (inline) ────────────────────────────────────── -->
+    <model name='ground_plane'>
+      <static>1</static>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <max_contacts>10</max_contacts>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <scene>
+      <ambient>0.6 0.55 0.5 1</ambient>
+      <background>0.8 0.78 0.72 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         OUTER WALLS  (12 m × 10 m floor plan)
+         All walls: 0.15 m thick, 2.8 m tall
+    ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- South wall -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -5 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>12.0 0.15 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>12.0 0.15 2.8</size></box></geometry>
+          <material><ambient>0.85 0.82 0.78 1</ambient><diffuse>0.85 0.82 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- North wall -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 5 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>12.0 0.15 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>12.0 0.15 2.8</size></box></geometry>
+          <material><ambient>0.85 0.82 0.78 1</ambient><diffuse>0.85 0.82 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- West wall (with door gap 1.2 m wide at center) -->
+    <!-- West wall lower segment -->
+    <model name="wall_west_lower">
+      <static>true</static>
+      <pose>-6 -2.9 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 4.2 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 4.2 2.8</size></box></geometry>
+          <material><ambient>0.85 0.82 0.78 1</ambient><diffuse>0.85 0.82 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- West wall upper segment -->
+    <model name="wall_west_upper">
+      <static>true</static>
+      <pose>-6 2.9 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 4.2 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 4.2 2.8</size></box></geometry>
+          <material><ambient>0.85 0.82 0.78 1</ambient><diffuse>0.85 0.82 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- Door lintel above gap -->
+    <model name="door_lintel">
+      <static>true</static>
+      <pose>-6 0 2.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 1.6 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 1.6 0.3</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- East wall -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>6 0 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 10.0 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 10.0 2.8</size></box></geometry>
+          <material><ambient>0.85 0.82 0.78 1</ambient><diffuse>0.85 0.82 0.78 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         INTERIOR DIVIDER WALL  (counter area separator)
+         Runs east-west, leaving a 1.5 m gap at the east side
+    ═══════════════════════════════════════════════════════════════════ -->
+    <model name="divider_west">
+      <static>true</static>
+      <pose>0.5 1.5 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>5.5 0.12 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>5.5 0.12 2.8</size></box></geometry>
+          <material><ambient>0.75 0.7 0.65 1</ambient><diffuse>0.75 0.7 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         COUNTER / BAR  (3.5 m long, 0.6 m wide, 1.0 m tall)
+         Located along north wall, right side
+    ═══════════════════════════════════════════════════════════════════ -->
+    <model name="counter">
+      <static>true</static>
+      <pose>3.5 4.2 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3.5 0.6 1.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>3.5 0.6 1.0</size></box></geometry>
+          <material><ambient>0.45 0.28 0.12 1</ambient><diffuse>0.45 0.28 0.12 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Counter top surface -->
+    <model name="counter_top">
+      <static>true</static>
+      <pose>3.5 4.2 1.02 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3.5 0.6 0.04</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>3.5 0.6 0.04</size></box></geometry>
+          <material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SEATING TABLES  (round, 0.7 m dia, 0.75 m tall)
+         + CHAIRS (simple blocks, 0.4×0.4×0.45 m)
+    ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- Table 1 — south-west zone -->
+    <model name="table_1">
+      <static>true</static>
+      <pose>-3.5 -3.0 0.375 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry>
+          <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="chair_1a"><static>true</static><pose>-3.5 -2.35 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+    <model name="chair_1b"><static>true</static><pose>-3.5 -3.65 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+
+    <!-- Table 2 — south center -->
+    <model name="table_2">
+      <static>true</static>
+      <pose>-0.5 -3.0 0.375 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry>
+          <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="chair_2a"><static>true</static><pose>-0.5 -2.35 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+    <model name="chair_2b"><static>true</static><pose>-0.5 -3.65 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+
+    <!-- Table 3 — south east -->
+    <model name="table_3">
+      <static>true</static>
+      <pose>2.5 -3.0 0.375 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry>
+          <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="chair_3a"><static>true</static><pose>2.5 -2.35 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+    <model name="chair_3b"><static>true</static><pose>2.5 -3.65 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.2 0.45 0.6 1</ambient><diffuse>0.2 0.45 0.6 1</diffuse></material></visual></link></model>
+
+    <!-- Table 4 — north seating (lounge) -->
+    <model name="table_4">
+      <static>true</static>
+      <pose>-2.5 2.8 0.375 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.35</radius><length>0.75</length></cylinder></geometry>
+          <material><ambient>0.55 0.35 0.15 1</ambient><diffuse>0.55 0.35 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="chair_4a"><static>true</static><pose>-2.5 2.15 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.7 0.35 0.2 1</ambient><diffuse>0.7 0.35 0.2 1</diffuse></material></visual></link></model>
+    <model name="chair_4b"><static>true</static><pose>-2.5 3.45 0.225 0 0 0</pose>
+      <link name="link"><collision name="col"><geometry><box><size>0.4 0.4 0.45</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.4 0.4 0.45</size></box></geometry>
+          <material><ambient>0.7 0.35 0.2 1</ambient><diffuse>0.7 0.35 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SUPPORT PILLARS  (0.25 × 0.25 × 2.8 m)
+    ═══════════════════════════════════════════════════════════════════ -->
+    <model name="pillar_sw">
+      <static>true</static>
+      <pose>-4.5 -1.5 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.25 0.25 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.25 0.25 2.8</size></box></geometry>
+          <material><ambient>0.7 0.68 0.65 1</ambient><diffuse>0.7 0.68 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pillar_se">
+      <static>true</static>
+      <pose>2.0 -1.5 1.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.25 0.25 2.8</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.25 0.25 2.8</size></box></geometry>
+          <material><ambient>0.7 0.68 0.65 1</ambient><diffuse>0.7 0.68 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DISPLAY SHELF  (along east wall, near counter)
+    ═══════════════════════════════════════════════════════════════════ -->
+    <model name="display_shelf">
+      <static>true</static>
+      <pose>5.9 2.5 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 2.5 1.2</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.2 2.5 1.2</size></box></geometry>
+          <material><ambient>0.4 0.25 0.1 1</ambient><diffuse>0.4 0.25 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TRASH / WASTE BIN  (cylinder near south-east)
+    ═══════════════════════════════════════════════════════════════════ -->
+    <model name="trash_bin">
+      <static>true</static>
+      <pose>4.8 -4.2 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.18</radius><length>0.6</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.18</radius><length>0.6</length></cylinder></geometry>
+          <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- physics -->
+    <physics type="ode">
+      <real_time_update_rate>1000.0</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+
+  </world>
+</sdf>
