@@ -98,7 +98,7 @@ OPPONENT_OBS = "opponent_obs"
 OPPONENT_ACTION = "opponent_action"
 
 class TorchCentralizedCriticModel(TorchModelV2, nn.Module):
-    """Multi-agent model that implements a centralized VF for 3-robot swarm."""
+    """Permutation-Invariant GNN / Mean-Embedding model with centralized critic."""
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         TorchModelV2.__init__(
@@ -106,32 +106,108 @@ class TorchCentralizedCriticModel(TorchModelV2, nn.Module):
         )
         nn.Module.__init__(self)
 
-        # Base actor model (processes local observation to output action log-probs/logits)
-        self.model = TorchFC(obs_space, action_space, num_outputs, model_config, name)
+        # 1. Neighbor embedding network
+        # Relative dist and angle (2 dims) -> hidden neighbor features (16 dims)
+        self.neighbor_mlp = nn.Sequential(
+            SlimFC(2, 16, activation_fn=nn.ReLU),
+            SlimFC(16, 16, activation_fn=nn.ReLU),
+        )
 
-        # Centralized Critic: maps joint state (obs + opponent_obs + opponent_actions) -> value
-        # 32 (own obs) + 64 (2 opponents * 32) + 4 (2 opponents * 2 actions) = 100
-        input_size = 32 + 64 + 4
+        # 2. Main actor network: takes own state (28 dims) + aggregated neighbors (16 dims) = 44 dims
+        self.actor_mlp = nn.Sequential(
+            SlimFC(44, 64, activation_fn=nn.Tanh),
+            SlimFC(64, 64, activation_fn=nn.Tanh),
+            SlimFC(64, num_outputs),
+        )
+
+        # Local value function head (fallback/evaluation)
+        self.local_vf = nn.Sequential(
+            SlimFC(44, 64, activation_fn=nn.Tanh),
+            SlimFC(64, 1),
+        )
+
+        # 3. Opponent embedding network (for centralized critic)
+        # Process joint state of each opponent: obs (46) + action (2) = 48 dims
+        self.opponent_mlp = nn.Sequential(
+            SlimFC(48, 32, activation_fn=nn.ReLU),
+            SlimFC(32, 32, activation_fn=nn.ReLU),
+        )
+
+        # 4. Centralized Critic: own features (44) + aggregated opponents (32) = 76 dims
         self.central_vf = nn.Sequential(
-            SlimFC(input_size, 64, activation_fn=nn.Tanh),
+            SlimFC(76, 64, activation_fn=nn.Tanh),
             SlimFC(64, 64, activation_fn=nn.Tanh),
             SlimFC(64, 1),
         )
 
+        self._features = None
+
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
-        model_out, _ = self.model(input_dict, state, seq_lens)
+        obs = input_dict["obs"]
+        batch_size = obs.shape[0]
+
+        # Extract ego features
+        ego_feats = obs[:, 0:28]
+
+        # Extract neighbor features
+        neighbors = obs[:, 28:46].reshape(batch_size, 9, 2)
+        neighbors_flat = neighbors.reshape(batch_size * 9, 2)
+        neighbor_embeds_flat = self.neighbor_mlp(neighbors_flat)
+        neighbor_embeds = neighbor_embeds_flat.reshape(batch_size, 9, 16)
+
+        # Mask out padded neighbors (padded distance is 10.0)
+        neighbor_dists = neighbors[:, :, 0:1]
+        mask = (neighbor_dists < 9.0).float()
+        neighbor_embeds = neighbor_embeds * mask
+        num_valid = torch.clamp(mask.sum(dim=1), min=1.0)
+        aggregated_neighbors = neighbor_embeds.sum(dim=1) / num_valid
+
+        # Concatenate and pass to actor
+        actor_input = torch.cat([ego_feats, aggregated_neighbors], dim=1)
+        self._features = actor_input
+
+        model_out = self.actor_mlp(actor_input)
         return model_out, []
 
     def central_value_function(self, obs, opponent_obs, opponent_actions):
-        # Concatenate: obs, opponent_obs, opponent_actions
-        input_ = torch.cat([obs, opponent_obs, opponent_actions], dim=1)
-        return torch.reshape(self.central_vf(input_), [-1])
+        batch_size = obs.shape[0]
+
+        # 1. Process main agent's own observation to own features (44 dims)
+        ego_feats = obs[:, 0:28]
+        neighbors = obs[:, 28:46].reshape(batch_size, 9, 2)
+        neighbors_flat = neighbors.reshape(batch_size * 9, 2)
+        neighbor_embeds_flat = self.neighbor_mlp(neighbors_flat)
+        neighbor_embeds = neighbor_embeds_flat.reshape(batch_size, 9, 16)
+        neighbor_dists = neighbors[:, :, 0:1]
+        mask = (neighbor_dists < 9.0).float()
+        neighbor_embeds = neighbor_embeds * mask
+        num_valid = torch.clamp(mask.sum(dim=1), min=1.0)
+        aggregated_neighbors = neighbor_embeds.sum(dim=1) / num_valid
+        own_features = torch.cat([ego_feats, aggregated_neighbors], dim=1)
+
+        # 2. Process opponents (max 9 opponents)
+        opp_obs = opponent_obs.reshape(batch_size, 9, 46)
+        opp_actions = opponent_actions.reshape(batch_size, 9, 2)
+        opp_joint = torch.cat([opp_obs, opp_actions], dim=2)
+        opp_joint_flat = opp_joint.reshape(batch_size * 9, 48)
+        opp_embeds_flat = self.opponent_mlp(opp_joint_flat)
+        opp_embeds = opp_embeds_flat.reshape(batch_size, 9, 32)
+
+        # Mask out inactive/dead opponents (all zeros)
+        opp_mask = (opp_obs.abs().sum(dim=2, keepdim=True) > 1e-3).float()
+        opp_embeds = opp_embeds * opp_mask
+        num_opp_valid = torch.clamp(opp_mask.sum(dim=1), min=1.0)
+        aggregated_opponents = opp_embeds.sum(dim=1) / num_opp_valid
+
+        # 3. Predict value
+        central_input = torch.cat([own_features, aggregated_opponents], dim=1)
+        return torch.reshape(self.central_vf(central_input), [-1])
 
     @override(TorchModelV2)
     def value_function(self):
-        # Return the local value estimate as a fallback/during evaluation
-        return self.model.value_function()
+        assert self._features is not None, "must call forward() first"
+        return torch.reshape(self.local_vf(self._features), [-1])
 
 
 class CentralizedValueMixin:
@@ -174,9 +250,14 @@ def centralized_critic_postprocessing(
             opp_obs_list.append(opp_obs)
             opp_act_list.append(opp_act)
             
+        # Pad to exactly 9 opponents (total 10 robots)
+        while len(opp_obs_list) < 9:
+            opp_obs_list.append(np.zeros((batch_len, 46), dtype=np.float32))
+            opp_act_list.append(np.zeros((batch_len, 2), dtype=np.float32))
+            
         # Concatenate opponents' states
-        opponent_obs = np.concatenate(opp_obs_list, axis=1) # Shape: (batch_size, 64)
-        opponent_act = np.concatenate(opp_act_list, axis=1) # Shape: (batch_size, 4)
+        opponent_obs = np.concatenate(opp_obs_list, axis=1) # Shape: (batch_size, 414)
+        opponent_act = np.concatenate(opp_act_list, axis=1) # Shape: (batch_size, 18)
         
         sample_batch[OPPONENT_OBS] = opponent_obs
         sample_batch[OPPONENT_ACTION] = opponent_act
@@ -195,8 +276,8 @@ def centralized_critic_postprocessing(
     else:
         # Policy initialization phase
         batch_len = len(sample_batch[SampleBatch.CUR_OBS])
-        sample_batch[OPPONENT_OBS] = np.zeros((batch_len, 64), dtype=np.float32)
-        sample_batch[OPPONENT_ACTION] = np.zeros((batch_len, 4), dtype=np.float32)
+        sample_batch[OPPONENT_OBS] = np.zeros((batch_len, 414), dtype=np.float32)
+        sample_batch[OPPONENT_ACTION] = np.zeros((batch_len, 18), dtype=np.float32)
         sample_batch[SampleBatch.VF_PREDS] = np.zeros_like(
             sample_batch[SampleBatch.REWARDS], dtype=np.float32
         )

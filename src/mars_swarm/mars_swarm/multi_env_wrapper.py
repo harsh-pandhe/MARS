@@ -144,9 +144,9 @@ class PettingZooSwarmEnv(ParallelEnv):
         
         self.num_lidar_beams = 24
         
-        # 24 (lidar) + 2 (goal rel) + 2 (vel) + 4 (other agents rel dist/angle) = 32
+        # 24 (lidar) + 2 (goal rel) + 2 (vel) + 18 (9 neighbors * 2) = 46
         self.observation_spaces = {
-            agent: gym.spaces.Box(low=-np.inf, high=np.inf, shape=(32,), dtype=np.float32)
+            agent: gym.spaces.Box(low=-np.inf, high=np.inf, shape=(46,), dtype=np.float32)
             for agent in agents
         }
         self.action_spaces = {
@@ -311,24 +311,25 @@ class PettingZooSwarmEnv(ParallelEnv):
             for other in self.possible_agents:
                 if other == agent:
                     continue
-                if other in poses:
+                # Only include active, alive neighbors
+                if other in self.agents and other in poses:
                     ox, oy, _ = poses[other]
                     n_dist = math.hypot(ox - x, oy - y)
                     n_angle = math.atan2(oy - y, ox - x) - yaw
                     n_angle = math.atan2(math.sin(n_angle), math.cos(n_angle))
                     neighbor_feats.extend([n_dist, n_angle])
                 
-            # Pad neighbor features to match fixed observation space size of 32
-            while len(neighbor_feats) < 4:
+            # Pad neighbor features to support up to 9 neighbors (max 10 robots)
+            while len(neighbor_feats) < 18:
                 neighbor_feats.extend([10.0, 0.0])
                 
-            obs = np.zeros(32, dtype=np.float32)
+            obs = np.zeros(46, dtype=np.float32)
             obs[0:24] = lidar_obs
             obs[24] = goal_dist
             obs[25] = goal_angle
             obs[26] = linear_vel
             obs[27] = angular_vel
-            obs[28:32] = neighbor_feats
+            obs[28:46] = neighbor_feats[:18]
             
             observations[agent] = obs
             states[agent] = (x, y, yaw)

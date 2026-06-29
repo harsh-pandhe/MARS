@@ -189,24 +189,24 @@ class TestSwarmLogic(unittest.TestCase):
         policy.compute_central_vf = policy.compute_central_vf
         setattr(policy, "compute_central_vf", policy.compute_central_vf)
 
-        # 2. Main agent's trajectory (length 5, obs dimension 32, action dimension 2)
+        # 2. Main agent's trajectory (length 5, obs dimension 46, action dimension 2)
         sample_batch = SampleBatch({
-            SampleBatch.CUR_OBS: np.ones((5, 32), dtype=np.float32),
+            SampleBatch.CUR_OBS: np.ones((5, 46), dtype=np.float32),
             SampleBatch.ACTIONS: np.ones((5, 2), dtype=np.float32),
             SampleBatch.REWARDS: np.ones(5, dtype=np.float32),
             SampleBatch.TERMINATEDS: np.array([False, False, False, False, True]),
             SampleBatch.VF_PREDS: np.zeros(5, dtype=np.float32),
         })
 
-        # 3. Opponent 1: Shorter trajectory (length 3, obs dimension 32, action dimension 2)
+        # 3. Opponent 1: Shorter trajectory (length 3, obs dimension 46, action dimension 2)
         opp1_batch = SampleBatch({
-            SampleBatch.CUR_OBS: np.ones((3, 32), dtype=np.float32) * 2.0,
+            SampleBatch.CUR_OBS: np.ones((3, 46), dtype=np.float32) * 2.0,
             SampleBatch.ACTIONS: np.ones((3, 2), dtype=np.float32) * 2.0,
         })
 
-        # 4. Opponent 2: Longer trajectory (length 7, obs dimension 32, action dimension 2)
+        # 4. Opponent 2: Longer trajectory (length 7, obs dimension 46, action dimension 2)
         opp2_batch = SampleBatch({
-            SampleBatch.CUR_OBS: np.ones((7, 32), dtype=np.float32) * 3.0,
+            SampleBatch.CUR_OBS: np.ones((7, 46), dtype=np.float32) * 3.0,
             SampleBatch.ACTIONS: np.ones((7, 2), dtype=np.float32) * 3.0,
         })
 
@@ -222,14 +222,14 @@ class TestSwarmLogic(unittest.TestCase):
         )
 
         # 6. Assertions
-        # Opponent observations should be concatenated to shape (5, 64)
-        self.assertEqual(processed_batch["opponent_obs"].shape, (5, 64))
-        # Opponent actions should be concatenated to shape (5, 4)
-        self.assertEqual(processed_batch["opponent_action"].shape, (5, 4))
+        # Opponent observations should be concatenated to shape (5, 9 * 46) = (5, 414)
+        self.assertEqual(processed_batch["opponent_obs"].shape, (5, 414))
+        # Opponent actions should be concatenated to shape (5, 9 * 2) = (5, 18)
+        self.assertEqual(processed_batch["opponent_action"].shape, (5, 18))
 
         # Check Opponent 1 (tb2) - should be padded with zeros for index 3 and 4
         # Since keys are sorted, "tb2" is index 0 in concatenated dimensions
-        opp1_obs_reconstructed = processed_batch["opponent_obs"][:, :32]
+        opp1_obs_reconstructed = processed_batch["opponent_obs"][:, :46]
         opp1_act_reconstructed = processed_batch["opponent_action"][:, :2]
         self.assertTrue(np.all(opp1_obs_reconstructed[:3] == 2.0))
         self.assertTrue(np.all(opp1_obs_reconstructed[3:] == 0.0))
@@ -238,11 +238,17 @@ class TestSwarmLogic(unittest.TestCase):
 
         # Check Opponent 2 (tb3) - should be sliced to match length 5
         # "tb3" is index 1 in concatenated dimensions
-        opp2_obs_reconstructed = processed_batch["opponent_obs"][:, 32:]
-        opp2_act_reconstructed = processed_batch["opponent_action"][:, 2:]
+        opp2_obs_reconstructed = processed_batch["opponent_obs"][:, 46:92]
+        opp2_act_reconstructed = processed_batch["opponent_action"][:, 2:4]
         self.assertEqual(len(opp2_obs_reconstructed), 5)
         self.assertTrue(np.all(opp2_obs_reconstructed == 3.0))
         self.assertTrue(np.all(opp2_act_reconstructed == 3.0))
+
+        # Check that indices 2 to 8 (opponent slots 3 to 9) are fully padded with zeros
+        opp3_to_9_obs_reconstructed = processed_batch["opponent_obs"][:, 92:]
+        opp3_to_9_act_reconstructed = processed_batch["opponent_action"][:, 4:]
+        self.assertTrue(np.all(opp3_to_9_obs_reconstructed == 0.0))
+        self.assertTrue(np.all(opp3_to_9_act_reconstructed == 0.0))
 
         print("[test_centralized_critic_postprocessing] All assertions passed successfully!")
 
