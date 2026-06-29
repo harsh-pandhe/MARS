@@ -33,7 +33,10 @@ graph TD
 3. **Multi-Agent Reinforcement Learning (MARL):** Policy sharing MAPPO (Multi-Agent PPO) algorithm implementation using PyTorch under Ray RLlib.
 4. **Transient Noise Rejection:** Custom settling delays (2.0s post-reset) and ROS 2 event flushes to prevent transient start-of-episode Lidar collision reports.
 5. **Fault-Tolerant Resilience Testing:** An independent ROS 2 node (`robot_killer`) designed to hijack and disable individual robots mid-episode to evaluate swarm adaptation capabilities.
-6. **Dual GUI Visualization (Gazebo + RViz):** Runs the physical Gazebo simulator and RViz2 side-by-side. A custom `tf_relay` node merges namespaced `/tbX/tf` transforms, and static transform publishers link them under a single root frame (`tb1/odom`) to view all robots, odometry paths, and colored LaserScan point clouds dynamically in one view.
+6. **Dual GUI Visualization (Gazebo + RViz):** Runs the physical Gazebo simulator and RViz2 side-by-side. A custom `tf_relay` node merges namespaced `/tbX/tf` transforms under a single root frame (`tb1/odom`) to view all robots, odometry paths, and colored LaserScan point clouds dynamically in one view.
+7. **Graph Neural Networks (GNN):** Permutation-invariant neighbor embedding using a multi-layer MLP encoder and mean pooling, allowing the policy to scale dynamically to an arbitrary number of robots.
+8. **Dual-Lookahead Control Barrier Functions (CBF):** Low-level quadratic program (QP) safety filter enforcing collision avoidance for both front and rear lookahead points, providing 100% collision-free navigation.
+9. **Sparse Decentralized Consensus:** Range-limited map synchronization ($3.0\text{m}$) where robots maintain local belief grids and merge them via bitwise OR.
 
 ---
 
@@ -108,10 +111,11 @@ This runs evaluation episodes under nominal, sensor noise (Gaussian noise added 
 
 ---
 
-## Observation Space Details (32-Dim Vector)
+## Observation Space Details (46-Dim Vector)
 Each robot receives a state observation vector containing:
 - **`[0 - 23]`:** Minimum range sub-sampled across 24 Lidar sectors.
 - **`[24 - 25]`:** Relative Goal distance and orientation angle.
 - **`[26 - 27]`:** Linear and angular command velocities.
-- **`[28 - 31]`:** Neighbor relative states (distances and angles to closest active neighbors).
+- **`[28 - 45]`:** Neighbor relative states (relative distances and angles to up to 9 neighbors, padded with default values `[10.0, 0.0]`).
+
 
