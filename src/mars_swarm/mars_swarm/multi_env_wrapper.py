@@ -6,6 +6,7 @@ import subprocess
 import numpy as np
 import gymnasium as gym
 from pettingzoo import ParallelEnv
+from scipy.optimize import minimize
 
 import rclpy
 from rclpy.node import Node
@@ -174,15 +175,23 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.grid_resolution_x = 40
         self.grid_resolution_y = 20
         self.visited_grid = np.zeros((self.grid_resolution_y, self.grid_resolution_x), dtype=bool)
+        self.local_visited_grids = {
+            agent: np.zeros((self.grid_resolution_y, self.grid_resolution_x), dtype=bool)
+            for agent in agents
+        }
         
         # High-resolution grid for SLAM-like OccupancyGrid visualization in RViz
         self.map_resolution = 0.1
         self.viz_resolution_x = int((self.grid_bounds[1] - self.grid_bounds[0]) / self.map_resolution) # 170
         self.viz_resolution_y = int((self.grid_bounds[3] - self.grid_bounds[2]) / self.map_resolution) # 80
         self.viz_grid = np.full((self.viz_resolution_y, self.viz_resolution_x), -1, dtype=np.int8)
+        self.local_viz_grids = {
+            agent: np.full((self.viz_resolution_y, self.viz_resolution_x), -1, dtype=np.int8)
+            for agent in agents
+        }
         
         self.last_obs = {
-            agent: np.zeros(32, dtype=np.float32) for agent in agents
+            agent: np.zeros(46, dtype=np.float32) for agent in agents
         }
         self.spawn_poses = {
             'tb1': (0.0, 0.0, 0.0),
@@ -199,7 +208,8 @@ class PettingZooSwarmEnv(ParallelEnv):
             agent: 10.0 for agent in agents
         }
         
-        rclpy.init(args=None)
+        if not rclpy.ok():
+            rclpy.init(args=None)
         node_name = f"mars_swarm_node_{int(time.time() * 1000) % 10000}"
         self.node = SwarmNode(node_name, agents=self.agents)
         
@@ -342,7 +352,7 @@ class PettingZooSwarmEnv(ParallelEnv):
             
         return observations, states, dists, collisions
 
-    def _mark_visited(self, x, y):
+    def _mark_visited(self, agent, x, y):
         min_x, max_x, min_y, max_y = self.grid_bounds
         x_clipped = np.clip(x, min_x, max_x - 1e-5)
         y_clipped = np.clip(y, min_y, max_y - 1e-5)
@@ -352,13 +362,14 @@ class PettingZooSwarmEnv(ParallelEnv):
         col = np.clip(col, 0, self.grid_resolution_x - 1)
         row = np.clip(row, 0, self.grid_resolution_y - 1)
         
-        newly_visited = not self.visited_grid[row, col]
+        newly_visited = not self.local_visited_grids[agent][row, col]
+        self.local_visited_grids[agent][row, col] = True
         self.visited_grid[row, col] = True
         return newly_visited
 
     def publish_coverage_map(self):
         try:
-            # Update visualization grid using Lidar ray-tracing
+            # Update visualization grid using Lidar ray-tracing locally for each agent
             for agent in self.agents:
                 scan_msg = self.node.scan_msgs.get(agent)
                 if scan_msg is None:
@@ -392,15 +403,16 @@ class PettingZooSwarmEnv(ParallelEnv):
                 c0 = int(np.clip((x - min_x) / (max_x - min_x) * self.viz_resolution_x, 0, self.viz_resolution_x - 1))
                 r0 = int(np.clip((y - min_y) / (max_y - min_y) * self.viz_resolution_y, 0, self.viz_resolution_y - 1))
                 
-                # Set robot's own footprint area to free (0)
+                # Set robot's own footprint area to free (0) on its local map
                 for dr in [-1, 0, 1]:
                     for dc in [-1, 0, 1]:
                         rr, cc = r0 + dr, c0 + dc
                         if 0 <= rr < self.viz_resolution_y and 0 <= cc < self.viz_resolution_x:
-                            self.viz_grid[rr, cc] = 0
-                            # Map back to visited grid
+                            self.local_viz_grids[agent][rr, cc] = 0
+                            # Map back to local visited grid
                             r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
                             c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
+                            self.local_visited_grids[agent][r_grid, c_grid] = True
                             self.visited_grid[r_grid, c_grid] = True
                 
                 ranges = np.array(scan_msg.ranges, dtype=np.float32)
@@ -428,15 +440,16 @@ class PettingZooSwarmEnv(ParallelEnv):
                     
                     line_cells = bresenham_line(r0, c0, r1, c1, self.viz_resolution_y, self.viz_resolution_x)
                     
-                    # Mark cells along the ray as free (0) if within coverage limit (2.0m)
+                    # Mark cells along the ray as free (0) if within coverage limit (2.0m) on local map
                     for rr, cc in line_cells[:-1]:
                         cell_x = min_x + (cc + 0.5) * self.map_resolution
                         cell_y = min_y + (rr + 0.5) * self.map_resolution
                         if math.hypot(cell_x - x, cell_y - y) <= 2.0:
-                            self.viz_grid[rr, cc] = 0
-                            # Map back to visited grid
+                            self.local_viz_grids[agent][rr, cc] = 0
+                            # Map back to local visited grid
                             r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
                             c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
+                            self.local_visited_grids[agent][r_grid, c_grid] = True
                             self.visited_grid[r_grid, c_grid] = True
                     
                     # Mark the last cell
@@ -446,15 +459,53 @@ class PettingZooSwarmEnv(ParallelEnv):
                         cell_y = min_y + (rr + 0.5) * self.map_resolution
                         dist = math.hypot(cell_x - x, cell_y - y)
                         if is_obstacle:
-                            # Always mark obstacle cells to ensure collision avoidance uses mapped boundaries
-                            self.viz_grid[rr, cc] = 100
+                            # Obstacles are global/physical boundaries
+                            self.local_viz_grids[agent][rr, cc] = 100
                         else:
                             if dist <= 2.0:
-                                self.viz_grid[rr, cc] = 0
-                                # Map back to visited grid
+                                self.local_viz_grids[agent][rr, cc] = 0
+                                # Map back to local visited grid
                                 r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
                                 c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
+                                self.local_visited_grids[agent][r_grid, c_grid] = True
                                 self.visited_grid[r_grid, c_grid] = True
+                                
+            # --- Decentralized Proximity-based Consensus (radio range = 3.0m) ---
+            d_comm = 3.0
+            active_agents = list(self.agents)
+            poses = {a: self.last_poses.get(a) for a in active_agents if self.last_poses.get(a) is not None}
+            
+            for idx1, a1 in enumerate(active_agents):
+                if a1 not in poses:
+                    continue
+                x1, y1, _ = poses[a1]
+                for a2 in active_agents[idx1+1:]:
+                    if a2 not in poses:
+                        continue
+                    x2, y2, _ = poses[a2]
+                    
+                    # If within communication distance, synchronize beliefs via bitwise OR
+                    if math.hypot(x1 - x2, y1 - y2) <= d_comm:
+                        # 1. Sync visited grids
+                        synced_visited = self.local_visited_grids[a1] | self.local_visited_grids[a2]
+                        self.local_visited_grids[a1] = synced_visited
+                        self.local_visited_grids[a2] = synced_visited
+                        
+                        # 2. Sync viz grids (copy explored cell values)
+                        mask1 = (self.local_viz_grids[a1] == -1) & (self.local_viz_grids[a2] >= 0)
+                        self.local_viz_grids[a1][mask1] = self.local_viz_grids[a2][mask1]
+                        
+                        mask2 = (self.local_viz_grids[a2] == -1) & (self.local_viz_grids[a1] >= 0)
+                        self.local_viz_grids[a2][mask2] = self.local_viz_grids[a1][mask2]
+            
+            # --- Update Global Monitoring Maps ---
+            self.visited_grid = np.bitwise_or.reduce(list(self.local_visited_grids.values()))
+            
+            merged_viz = np.full_like(self.viz_grid, -1)
+            for agent in self.possible_agents:
+                valid_mask = self.local_viz_grids[agent] >= 0
+                merged_viz[valid_mask] = self.local_viz_grids[agent][valid_mask]
+            self.viz_grid = merged_viz
             
             # Now build and publish the OccupancyGrid message using self.viz_grid
             grid_msg = OccupancyGrid()
@@ -486,6 +537,9 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.visited_grid.fill(False)
         self.viz_grid.fill(-1)
         for agent in self.possible_agents:
+            self.local_visited_grids[agent].fill(False)
+            self.local_viz_grids[agent].fill(-1)
+        for agent in self.possible_agents:
             if agent in self.node.paths:
                 self.node.paths[agent].poses = []
         
@@ -507,20 +561,107 @@ class PettingZooSwarmEnv(ParallelEnv):
         for agent in self.agents:
             self.prev_goal_dists[agent] = dist_dict[agent]
             x, y, _ = state_dict[agent]
-            self._mark_visited(x, y)
+            self._mark_visited(agent, x, y)
             
         self.publish_coverage_map()
         return obs_dict, {agent: {} for agent in self.agents}
+
+    def _apply_cbf(self, agent, v_nom, w_nom):
+        # Retrieve recent Lidar and neighbor data from last_obs
+        obs = self.last_obs.get(agent)
+        if obs is None:
+            return v_nom, w_nom
+            
+        lidar_ranges = obs[0:24]
+        # Neighbor features: 9 neighbors * 2 features (dist, angle)
+        neighbors = obs[28:46].reshape(9, 2)
+        
+        l = 0.12
+        d_safe = 0.20 # safety distance from lookahead point (corresponds to 0.32m physical bubble)
+        gamma = 2.0
+        
+        # Target objective: minimize deviation from nominal commands
+        def objective(u):
+            return (u[0] - v_nom)**2 + 0.05 * (u[1] - w_nom)**2
+            
+        cons = []
+        
+        # 1. LIDAR obstacle constraints (front & rear lookahead points)
+        angles = np.linspace(-np.pi, np.pi, 24)
+        for j in range(24):
+            d_j = lidar_ranges[j]
+            # Ignore far obstacles to keep it fast
+            if d_j > 0.6:
+                continue
+            phi_j = angles[j]
+            
+            # Front lookahead
+            h_front = (l - d_j * np.cos(phi_j))**2 + (d_j * np.sin(phi_j))**2 - d_safe**2
+            A_front = 2 * (l - d_j * np.cos(phi_j))
+            B_front = -2 * l * d_j * np.sin(phi_j)
+            
+            cons.append({
+                'type': 'ineq',
+                'fun': lambda u, A=A_front, B=B_front, h_val=h_front: A * u[0] + B * u[1] + gamma * h_val
+            })
+            
+            # Rear lookahead
+            h_rear = (-l - d_j * np.cos(phi_j))**2 + (d_j * np.sin(phi_j))**2 - d_safe**2
+            A_rear = 2 * (-l - d_j * np.cos(phi_j))
+            B_rear = 2 * l * d_j * np.sin(phi_j)
+            
+            cons.append({
+                'type': 'ineq',
+                'fun': lambda u, A=A_rear, B=B_rear, h_val=h_rear: A * u[0] + B * u[1] + gamma * h_val
+            })
+            
+        # 2. Neighbor constraints (front & rear lookahead points)
+        for dist, angle in neighbors:
+            if dist > 0.6 or dist < 0.01:
+                continue
+            # Front lookahead
+            h_front = (l - dist * np.cos(angle))**2 + (dist * np.sin(angle))**2 - d_safe**2
+            A_front = 2 * (l - dist * np.cos(angle))
+            B_front = -2 * l * dist * np.sin(angle)
+            
+            cons.append({
+                'type': 'ineq',
+                'fun': lambda u, A=A_front, B=B_front, h_val=h_front: A * u[0] + B * u[1] + gamma * h_val
+            })
+            
+            # Rear lookahead
+            h_rear = (-l - dist * np.cos(angle))**2 + (dist * np.sin(angle))**2 - d_safe**2
+            A_rear = 2 * (-l - dist * np.cos(angle))
+            B_rear = 2 * l * dist * np.sin(angle)
+            
+            cons.append({
+                'type': 'ineq',
+                'fun': lambda u, A=A_rear, B=B_rear, h_val=h_rear: A * u[0] + B * u[1] + gamma * h_val
+            })
+            
+        bounds = [(-0.22, 0.22), (-1.0, 1.0)]
+        res = minimize(objective, x0=np.array([v_nom, w_nom]), method='SLSQP', bounds=bounds, constraints=cons)
+        
+        if res.success:
+            return float(res.x[0]), float(res.x[1])
+        else:
+            return 0.0, 0.0
 
     def step(self, actions):
         # Apply actions
         for agent in self.possible_agents:
             if agent in self.agents and agent in actions:
                 action = actions[agent]
+                v_nom = float(action[0])
+                w_nom = float(action[1])
+                
+                # Filter velocities via Control Barrier Function
+                v_safe, w_safe = self._apply_cbf(agent, v_nom, w_nom)
+                
                 twist = Twist()
                 # Clamp velocities strictly to physical TurtleBot3 Waffle limits
-                twist.linear.x = float(np.clip(action[0], -0.22, 0.22))
-                twist.angular.z = float(np.clip(action[1], -1.0, 1.0))
+                twist.linear.x = float(np.clip(v_safe, -0.22, 0.22))
+                twist.angular.z = float(np.clip(w_safe, -1.0, 1.0))
                 self.node.cmd_vel_pubs[agent].publish(twist)
             else:
                 # Stop completed/inactive agents
@@ -536,7 +677,7 @@ class PettingZooSwarmEnv(ParallelEnv):
         new_cells_visited = 0
         for agent in self.agents:
             x, y, _ = state_dict[agent]
-            if self._mark_visited(x, y):
+            if self._mark_visited(agent, x, y):
                 new_cells_visited += 1
         coverage_reward = float(new_cells_visited) * 2.0
         

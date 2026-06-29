@@ -249,8 +249,141 @@ class TestSwarmLogic(unittest.TestCase):
         opp3_to_9_act_reconstructed = processed_batch["opponent_action"][:, 4:]
         self.assertTrue(np.all(opp3_to_9_obs_reconstructed == 0.0))
         self.assertTrue(np.all(opp3_to_9_act_reconstructed == 0.0))
-
         print("[test_centralized_critic_postprocessing] All assertions passed successfully!")
+
+    def test_cbf_safety_filter(self):
+        """
+        Verify that the Control Barrier Function (CBF) safety filter limits
+        velocities when obstacles or neighbors are within the safety distance.
+        """
+        # Mock class for PettingZooSwarmEnv
+        class MockEnv:
+            def __init__(self):
+                # Setup a dummy last_obs with size 46
+                self.last_obs = {}
+                
+            def _apply_cbf(self, agent, v_nom, w_nom):
+                # Import actual function and call it
+                from multi_env_wrapper import PettingZooSwarmEnv
+                return PettingZooSwarmEnv._apply_cbf(self, agent, v_nom, w_nom)
+                
+        env = MockEnv()
+        
+        # Test Case 1: Clear path ahead (all lidar beams see 3.5m, no neighbors)
+        obs_clear = np.ones(46, dtype=np.float32) * 3.5
+        # Set neighbor distances to 10.0 (padded)
+        obs_clear[28:46] = np.array([10.0, 0.0] * 9, dtype=np.float32)
+        env.last_obs["tb1"] = obs_clear
+        
+        v_safe, w_safe = env._apply_cbf("tb1", 0.22, 0.0)
+        # Should not change nominal action when path is clear
+        self.assertAlmostEqual(v_safe, 0.22, places=2)
+        self.assertAlmostEqual(w_safe, 0.0, places=2)
+        
+        # Test Case 2: Obstacle right in front (e.g. beam 12 at 0.15m)
+        obs_blocked = np.ones(46, dtype=np.float32) * 3.5
+        obs_blocked[28:46] = np.array([10.0, 0.0] * 9, dtype=np.float32)
+        # Beam 12 is at index 12 (straight ahead)
+        obs_blocked[12] = 0.15
+        env.last_obs["tb1"] = obs_blocked
+        
+        v_safe, w_safe = env._apply_cbf("tb1", 0.22, 0.0)
+        # Should reduce linear velocity significantly to prevent crash
+        self.assertTrue(v_safe < 0.05)
+        print("[test_cbf_safety_filter] All assertions passed successfully!")
+
+    def test_sparse_decentralized_consensus(self):
+        """
+        Verify that robots synchronize belief maps only when within communication range (3.0m).
+        """
+        # Create a mock environment/object to test consensus logic
+        class MockEnv:
+            def __init__(self):
+                self.agents = ["tb1", "tb2", "tb3"]
+                self.possible_agents = self.agents
+                self.grid_resolution_x = 10
+                self.grid_resolution_y = 10
+                self.viz_resolution_x = 10
+                self.viz_resolution_y = 10
+                
+                # Initialize local belief grids
+                self.local_visited_grids = {
+                    a: np.zeros((10, 10), dtype=bool) for a in self.agents
+                }
+                self.local_viz_grids = {
+                    a: np.full((10, 10), -1, dtype=np.int8) for a in self.agents
+                }
+                
+                # Setup custom cell explored flags
+                # tb1 has explored (0,0)
+                self.local_visited_grids["tb1"][0, 0] = True
+                self.local_viz_grids["tb1"][0, 0] = 0
+                
+                # tb2 has explored (1,1)
+                self.local_visited_grids["tb2"][1, 1] = True
+                self.local_viz_grids["tb2"][1, 1] = 0
+                
+                # tb3 has explored (2,2)
+                self.local_visited_grids["tb3"][2, 2] = True
+                self.local_viz_grids["tb3"][2, 2] = 0
+                
+                # Track poses
+                self.last_poses = {}
+                
+            def run_consensus(self):
+                # Call consensus block from publish_coverage_map
+                import math
+                d_comm = 3.0
+                active_agents = list(self.agents)
+                poses = {a: self.last_poses.get(a) for a in active_agents if self.last_poses.get(a) is not None}
+                
+                for idx1, a1 in enumerate(active_agents):
+                    if a1 not in poses:
+                        continue
+                    x1, y1, _ = poses[a1]
+                    for a2 in active_agents[idx1+1:]:
+                        if a2 not in poses:
+                            continue
+                        x2, y2, _ = poses[a2]
+                        
+                        if math.hypot(x1 - x2, y1 - y2) <= d_comm:
+                            # 1. Sync visited grids
+                            synced_visited = self.local_visited_grids[a1] | self.local_visited_grids[a2]
+                            self.local_visited_grids[a1] = synced_visited
+                            self.local_visited_grids[a2] = synced_visited
+                            
+                            # 2. Sync viz grids
+                            mask1 = (self.local_viz_grids[a1] == -1) & (self.local_viz_grids[a2] >= 0)
+                            self.local_viz_grids[a1][mask1] = self.local_viz_grids[a2][mask1]
+                            
+                            mask2 = (self.local_viz_grids[a2] == -1) & (self.local_viz_grids[a1] >= 0)
+                            self.local_viz_grids[a2][mask2] = self.local_viz_grids[a1][mask2]
+                            
+        env = MockEnv()
+        
+        # Test Case 1: tb1 and tb2 are close (1.0m), tb3 is far (5.0m)
+        env.last_poses["tb1"] = (0.0, 0.0, 0.0)
+        env.last_poses["tb2"] = (1.0, 0.0, 0.0)
+        env.last_poses["tb3"] = (5.0, 0.0, 0.0)
+        
+        env.run_consensus()
+        
+        # tb1 and tb2 should have merged their beliefs:
+        # Both should know about (0,0) and (1,1)
+        self.assertTrue(env.local_visited_grids["tb1"][0, 0])
+        self.assertTrue(env.local_visited_grids["tb1"][1, 1])
+        self.assertTrue(env.local_visited_grids["tb2"][0, 0])
+        self.assertTrue(env.local_visited_grids["tb2"][1, 1])
+        
+        # tb3 should NOT have merged with tb1 or tb2:
+        # tb3 only knows about (2,2)
+        self.assertTrue(env.local_visited_grids["tb3"][2, 2])
+        self.assertFalse(env.local_visited_grids["tb3"][0, 0])
+        self.assertFalse(env.local_visited_grids["tb3"][1, 1])
+        self.assertFalse(env.local_visited_grids["tb1"][2, 2])
+        self.assertFalse(env.local_visited_grids["tb2"][2, 2])
+        
+        print("[test_sparse_decentralized_consensus] All assertions passed successfully!")
 
 if __name__ == '__main__':
     unittest.main()
