@@ -168,5 +168,83 @@ class TestSwarmLogic(unittest.TestCase):
         self.assertNotIn('tb1', env_agents)
         self.assertIsNone(active_targets['tb1'])
 
+    def test_centralized_critic_postprocessing(self):
+        """
+        Verify that centralized critic postprocessing successfully aligns,
+        pads, and concatenates observations and actions of other swarm agents.
+        """
+        from ray.rllib.policy.sample_batch import SampleBatch
+        
+        # 1. Create mock policy and inputs
+        class MockPolicy:
+            def __init__(self):
+                self.config = {"framework": "torch", "gamma": 0.99, "lambda": 0.95, "use_gae": True}
+                self.device = "cpu"
+            def compute_central_vf(self, obs, opponent_obs, opponent_actions):
+                # Central critic returns value vector of shape (batch_len,)
+                import torch
+                return torch.zeros(obs.shape[0])
+                
+        policy = MockPolicy()
+        policy.compute_central_vf = policy.compute_central_vf
+        setattr(policy, "compute_central_vf", policy.compute_central_vf)
+
+        # 2. Main agent's trajectory (length 5, obs dimension 32, action dimension 2)
+        sample_batch = SampleBatch({
+            SampleBatch.CUR_OBS: np.ones((5, 32), dtype=np.float32),
+            SampleBatch.ACTIONS: np.ones((5, 2), dtype=np.float32),
+            SampleBatch.REWARDS: np.ones(5, dtype=np.float32),
+            SampleBatch.TERMINATEDS: np.array([False, False, False, False, True]),
+            SampleBatch.VF_PREDS: np.zeros(5, dtype=np.float32),
+        })
+
+        # 3. Opponent 1: Shorter trajectory (length 3, obs dimension 32, action dimension 2)
+        opp1_batch = SampleBatch({
+            SampleBatch.CUR_OBS: np.ones((3, 32), dtype=np.float32) * 2.0,
+            SampleBatch.ACTIONS: np.ones((3, 2), dtype=np.float32) * 2.0,
+        })
+
+        # 4. Opponent 2: Longer trajectory (length 7, obs dimension 32, action dimension 2)
+        opp2_batch = SampleBatch({
+            SampleBatch.CUR_OBS: np.ones((7, 32), dtype=np.float32) * 3.0,
+            SampleBatch.ACTIONS: np.ones((7, 2), dtype=np.float32) * 3.0,
+        })
+
+        other_agent_batches = {
+            "tb2": (None, opp1_batch),
+            "tb3": (None, opp2_batch),
+        }
+
+        # 5. Run the postprocessing logic
+        from train_multi import centralized_critic_postprocessing
+        processed_batch = centralized_critic_postprocessing(
+            policy, sample_batch, other_agent_batches=other_agent_batches
+        )
+
+        # 6. Assertions
+        # Opponent observations should be concatenated to shape (5, 64)
+        self.assertEqual(processed_batch["opponent_obs"].shape, (5, 64))
+        # Opponent actions should be concatenated to shape (5, 4)
+        self.assertEqual(processed_batch["opponent_action"].shape, (5, 4))
+
+        # Check Opponent 1 (tb2) - should be padded with zeros for index 3 and 4
+        # Since keys are sorted, "tb2" is index 0 in concatenated dimensions
+        opp1_obs_reconstructed = processed_batch["opponent_obs"][:, :32]
+        opp1_act_reconstructed = processed_batch["opponent_action"][:, :2]
+        self.assertTrue(np.all(opp1_obs_reconstructed[:3] == 2.0))
+        self.assertTrue(np.all(opp1_obs_reconstructed[3:] == 0.0))
+        self.assertTrue(np.all(opp1_act_reconstructed[:3] == 2.0))
+        self.assertTrue(np.all(opp1_act_reconstructed[3:] == 0.0))
+
+        # Check Opponent 2 (tb3) - should be sliced to match length 5
+        # "tb3" is index 1 in concatenated dimensions
+        opp2_obs_reconstructed = processed_batch["opponent_obs"][:, 32:]
+        opp2_act_reconstructed = processed_batch["opponent_action"][:, 2:]
+        self.assertEqual(len(opp2_obs_reconstructed), 5)
+        self.assertTrue(np.all(opp2_obs_reconstructed == 3.0))
+        self.assertTrue(np.all(opp2_act_reconstructed == 3.0))
+
+        print("[test_centralized_critic_postprocessing] All assertions passed successfully!")
+
 if __name__ == '__main__':
     unittest.main()

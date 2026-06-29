@@ -5,10 +5,23 @@ import signal
 import subprocess
 import argparse
 import numpy as np
+import torch
+import torch.nn as nn
 
 # Ensure path includes workspace packages
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from multi_env_wrapper import PettingZooSwarmEnv
+
+from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
+from ray.rllib.models.torch.fcnet import FullyConnectedNetwork as TorchFC
+from ray.rllib.models.torch.misc import SlimFC
+from ray.rllib.utils.annotations import override
+from ray.rllib.evaluation.postprocessing import Postprocessing, compute_advantages
+from ray.rllib.policy.sample_batch import SampleBatch
+from ray.rllib.utils.torch_utils import convert_to_torch_tensor
+from ray.rllib.models import ModelCatalog
+from ray.rllib.algorithms.ppo.ppo import PPO, PPOConfig
+from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 
 # --- Gazebo Launcher Helpers ---
 gazebo_process = None
@@ -80,12 +93,181 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
+# --- MAPPO Centralized Critic Definitions ---
+OPPONENT_OBS = "opponent_obs"
+OPPONENT_ACTION = "opponent_action"
+
+class TorchCentralizedCriticModel(TorchModelV2, nn.Module):
+    """Multi-agent model that implements a centralized VF for 3-robot swarm."""
+
+    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
+        TorchModelV2.__init__(
+            self, obs_space, action_space, num_outputs, model_config, name
+        )
+        nn.Module.__init__(self)
+
+        # Base actor model (processes local observation to output action log-probs/logits)
+        self.model = TorchFC(obs_space, action_space, num_outputs, model_config, name)
+
+        # Centralized Critic: maps joint state (obs + opponent_obs + opponent_actions) -> value
+        # 32 (own obs) + 64 (2 opponents * 32) + 4 (2 opponents * 2 actions) = 100
+        input_size = 32 + 64 + 4
+        self.central_vf = nn.Sequential(
+            SlimFC(input_size, 64, activation_fn=nn.Tanh),
+            SlimFC(64, 64, activation_fn=nn.Tanh),
+            SlimFC(64, 1),
+        )
+
+    @override(TorchModelV2)
+    def forward(self, input_dict, state, seq_lens):
+        model_out, _ = self.model(input_dict, state, seq_lens)
+        return model_out, []
+
+    def central_value_function(self, obs, opponent_obs, opponent_actions):
+        # Concatenate: obs, opponent_obs, opponent_actions
+        input_ = torch.cat([obs, opponent_obs, opponent_actions], dim=1)
+        return torch.reshape(self.central_vf(input_), [-1])
+
+    @override(TorchModelV2)
+    def value_function(self):
+        # Return the local value estimate as a fallback/during evaluation
+        return self.model.value_function()
+
+
+class CentralizedValueMixin:
+    """Add method to evaluate the central value function from the model."""
+    def __init__(self):
+        self.compute_central_vf = self.model.central_value_function
+
+
+def centralized_critic_postprocessing(
+    policy, sample_batch, other_agent_batches=None, episode=None
+):
+    pytorch = policy.config["framework"] == "torch"
+    if pytorch and hasattr(policy, "compute_central_vf"):
+        assert other_agent_batches is not None
+        
+        # Sort opponent keys to ensure deterministic order
+        sorted_opponents = sorted(list(other_agent_batches.keys()))
+        
+        opp_obs_list = []
+        opp_act_list = []
+        batch_len = len(sample_batch[SampleBatch.CUR_OBS])
+        
+        for opp_id in sorted_opponents:
+            opp_val = other_agent_batches[opp_id]
+            opp_batch = opp_val[-1]
+            opp_obs = opp_batch[SampleBatch.CUR_OBS]
+            opp_act = opp_batch[SampleBatch.ACTIONS]
+            
+            # Pad or slice to match current batch length
+            opp_len = len(opp_obs)
+            if opp_len < batch_len:
+                pad_obs = np.zeros((batch_len - opp_len, opp_obs.shape[1]), dtype=opp_obs.dtype)
+                opp_obs = np.concatenate([opp_obs, pad_obs], axis=0)
+                pad_act = np.zeros((batch_len - opp_len, opp_act.shape[1]), dtype=opp_act.dtype)
+                opp_act = np.concatenate([opp_act, pad_act], axis=0)
+            elif opp_len > batch_len:
+                opp_obs = opp_obs[:batch_len]
+                opp_act = opp_act[:batch_len]
+                
+            opp_obs_list.append(opp_obs)
+            opp_act_list.append(opp_act)
+            
+        # Concatenate opponents' states
+        opponent_obs = np.concatenate(opp_obs_list, axis=1) # Shape: (batch_size, 64)
+        opponent_act = np.concatenate(opp_act_list, axis=1) # Shape: (batch_size, 4)
+        
+        sample_batch[OPPONENT_OBS] = opponent_obs
+        sample_batch[OPPONENT_ACTION] = opponent_act
+        
+        # Evaluate centralized value predictions
+        sample_batch[SampleBatch.VF_PREDS] = (
+            policy.compute_central_vf(
+                convert_to_torch_tensor(sample_batch[SampleBatch.CUR_OBS], policy.device),
+                convert_to_torch_tensor(sample_batch[OPPONENT_OBS], policy.device),
+                convert_to_torch_tensor(sample_batch[OPPONENT_ACTION], policy.device),
+            )
+            .cpu()
+            .detach()
+            .numpy()
+        )
+    else:
+        # Policy initialization phase
+        batch_len = len(sample_batch[SampleBatch.CUR_OBS])
+        sample_batch[OPPONENT_OBS] = np.zeros((batch_len, 64), dtype=np.float32)
+        sample_batch[OPPONENT_ACTION] = np.zeros((batch_len, 4), dtype=np.float32)
+        sample_batch[SampleBatch.VF_PREDS] = np.zeros_like(
+            sample_batch[SampleBatch.REWARDS], dtype=np.float32
+        )
+
+    completed = sample_batch[SampleBatch.TERMINATEDS][-1]
+    if completed:
+        last_r = 0.0
+    else:
+        last_r = sample_batch[SampleBatch.VF_PREDS][-1]
+
+    train_batch = compute_advantages(
+        sample_batch,
+        last_r,
+        policy.config["gamma"],
+        policy.config["lambda"],
+        use_gae=policy.config["use_gae"],
+    )
+    return train_batch
+
+
+def loss_with_central_critic(policy, base_policy, model, dist_class, train_batch):
+    # Save original value function.
+    vf_saved = model.value_function
+
+    # Temporarily bind model's value function to return the central value output
+    model.value_function = lambda: policy.model.central_value_function(
+        train_batch[SampleBatch.CUR_OBS],
+        train_batch[OPPONENT_OBS],
+        train_batch[OPPONENT_ACTION],
+    )
+    policy._central_value_out = model.value_function()
+    loss = base_policy.loss(model, dist_class, train_batch)
+
+    # Restore original value function.
+    model.value_function = vf_saved
+    return loss
+
+
+class CCPPOTorchPolicy(CentralizedValueMixin, PPOTorchPolicy):
+    def __init__(self, observation_space, action_space, config):
+        PPOTorchPolicy.__init__(self, observation_space, action_space, config)
+        CentralizedValueMixin.__init__(self)
+
+    @override(PPOTorchPolicy)
+    def loss(self, model, dist_class, train_batch):
+        return loss_with_central_critic(self, super(), model, dist_class, train_batch)
+
+    @override(PPOTorchPolicy)
+    def postprocess_trajectory(
+        self, sample_batch, other_agent_batches=None, episode=None
+    ):
+        return centralized_critic_postprocessing(
+            self, sample_batch, other_agent_batches, episode
+        )
+
+
+class CentralizedCritic(PPO):
+    @classmethod
+    @override(PPO)
+    def get_default_policy_class(cls, config):
+        return CCPPOTorchPolicy
+
+
 # --- MAPPO RLlib Training ---
 def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     import ray
-    from ray.rllib.algorithms.ppo import PPOConfig
     from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
     from ray.tune.registry import register_env
+    
+    # Register Custom Centralized Critic Model
+    ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
     
     # 1. Initialize Ray
     ray.init(ignore_reinit_error=True)
@@ -107,6 +289,10 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     # Since robots are homogeneous, we train a single shared policy
     config = (
         PPOConfig()
+        .api_stack(
+            enable_env_runner_and_connector_v2=False,
+            enable_rl_module_and_learner=False,
+        )
         .environment("mars_swarm_v0")
         .framework("torch")
         .env_runners(
@@ -114,6 +300,7 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
             rollout_fragment_length=150,
         )
         .training(
+            model={"custom_model": "cc_model"},
             train_batch_size=300,
             minibatch_size=64,
             num_epochs=5,
@@ -128,10 +315,10 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
         .resources(num_gpus=0)
     )
     
-    print("[train_multi] Starting MAPPO Training Loop...")
+    print("[train_multi] Starting MAPPO Training Loop with Centralized Critic...")
     start_gazebo(headless=headless)
     
-    algo = config.build()
+    algo = CentralizedCritic(config=config)
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     for i in range(1, iterations + 1):
@@ -164,9 +351,11 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
 # --- Evaluation Node ---
 def run_evaluation(checkpoint_path, episodes=5, headless=False):
     import ray
-    from ray.rllib.algorithms.algorithm import Algorithm
     from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
     from ray.tune.registry import register_env
+    
+    # Register Custom Centralized Critic Model
+    ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
     
     # 1. Initialize Ray
     ray.init(ignore_reinit_error=True)
@@ -179,7 +368,7 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
     
     # 3. Load Algorithm from Checkpoint
     print(f"[train_multi] Loading Algorithm from checkpoint: {checkpoint_path}")
-    algo = Algorithm.from_checkpoint(checkpoint_path)
+    algo = CentralizedCritic.from_checkpoint(checkpoint_path)
     
     # 4. Start Gazebo
     start_gazebo(headless=headless)
