@@ -40,7 +40,10 @@ def start_gazebo(headless=True, multi=True):
         preexec_fn=os.setsid
     )
     print("[train_multi] Gazebo process launched. Waiting for topics...")
-    time.sleep(12.0)  # Wait for Gazebo and ROS 2 bridges to fully start up
+    if not headless:
+        time.sleep(22.0)  # Wait longer for Gazebo GUI and rendering to initialize
+    else:
+        time.sleep(12.0)  # Wait for Gazebo and ROS 2 bridges to fully start up
 
     if not headless:
         from ament_index_python.packages import get_package_share_directory
