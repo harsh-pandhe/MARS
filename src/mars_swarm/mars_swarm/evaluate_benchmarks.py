@@ -17,7 +17,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     
     # Metrics tracking
     steps = 0
-    total_cells = env.grid_resolution * env.grid_resolution
+    total_cells = env.grid_resolution_x * env.grid_resolution_y
     initial_visited = np.sum(env.visited_grid)
     
     # Trajectory tracking for distance
@@ -25,7 +25,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     distances = {agent: 0.0 for agent in env.possible_agents}
     
     # Cell occupancy overlap counts
-    cell_visit_counts = np.zeros((env.grid_resolution, env.grid_resolution))
+    cell_visit_counts = np.zeros((env.grid_resolution_y, env.grid_resolution_x))
     
     # Pick a random agent to fail if failure injection is enabled
     failed_agent = 'tb2'
@@ -58,16 +58,17 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 
                 # Find unvisited cells
                 unvisited_coords = []
-                for r in range(env.grid_resolution):
-                    for c in range(env.grid_resolution):
+                for r in range(env.grid_resolution_y):
+                    for c in range(env.grid_resolution_x):
                         if not env.visited_grid[r, c]:
                             # Skip if this cell is occupied by a known wall in the high-res map
                             is_obstacle = False
-                            ratio = env.viz_resolution // env.grid_resolution
-                            start_r = r * ratio
-                            start_c = c * ratio
-                            for dr in range(ratio):
-                                for dc in range(ratio):
+                            ratio_x = env.viz_resolution_x // env.grid_resolution_x
+                            ratio_y = env.viz_resolution_y // env.grid_resolution_y
+                            start_r = r * ratio_y
+                            start_c = c * ratio_x
+                            for dr in range(ratio_y):
+                                for dc in range(ratio_x):
                                     if env.viz_grid[start_r + dr, start_c + dc] == 100:
                                         is_obstacle = True
                                         break
@@ -77,8 +78,8 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                                 continue
                                 
                             # Map row/col back to global x, y
-                            cx = min_x + (c + 0.5) * (max_x - min_x) / env.grid_resolution
-                            cy = min_y + (r + 0.5) * (max_y - min_y) / env.grid_resolution
+                            cx = min_x + (c + 0.5) * (max_x - min_x) / env.grid_resolution_x
+                            cy = min_y + (r + 0.5) * (max_y - min_y) / env.grid_resolution_y
                             unvisited_coords.append((cx, cy))
                             
                 if len(unvisited_coords) > 0:
@@ -167,8 +168,8 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 min_x, max_x, min_y, max_y = env.grid_bounds
                 x_clipped = np.clip(cx, min_x, max_x - 1e-5)
                 y_clipped = np.clip(cy, min_y, max_y - 1e-5)
-                col = int((x_clipped - min_x) / (max_x - min_x) * env.grid_resolution)
-                row = int((y_clipped - min_y) / (max_y - min_y) * env.grid_resolution)
+                col = int((x_clipped - min_x) / (max_x - min_x) * env.grid_resolution_x)
+                row = int((y_clipped - min_y) / (max_y - min_y) * env.grid_resolution_y)
                 cell_visit_counts[row, col] += 1
                 
         steps += 1
@@ -208,11 +209,25 @@ def main():
     policy = None
     if args.checkpoint:
         import ray
-        from ray.rllib.algorithms.algorithm import Algorithm
+        from ray.rllib.models import ModelCatalog
+        from ray.tune.registry import register_env
+        from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
+        from train_multi import TorchCentralizedCriticModel, CentralizedCritic
+        
+        # Register Custom Centralized Critic Model
+        ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
+        
+        # Initialize Ray
         ray.init(ignore_reinit_error=True)
+        
+        # Register Environment
+        def env_creator(config_dict):
+            return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150))
+        register_env("mars_swarm_v0", env_creator)
+        
         print(f"[benchmark] Loading MAPPO checkpoint from {args.checkpoint}...")
         try:
-            algo = Algorithm.from_checkpoint(args.checkpoint)
+            algo = CentralizedCritic.from_checkpoint(args.checkpoint)
             policy = algo.get_policy("shared_policy")
             print("[benchmark] MAPPO policy loaded successfully.")
         except Exception as e:
