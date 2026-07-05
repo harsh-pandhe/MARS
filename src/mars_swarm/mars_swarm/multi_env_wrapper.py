@@ -739,7 +739,7 @@ class PettingZooSwarmEnv(ParallelEnv):
             rewards[agent] = reward
             
             if self.continuous_exploration:
-                terminated = collision
+                terminated = False
             else:
                 terminated = collision or goal_reached
             terminations[agent] = terminated
