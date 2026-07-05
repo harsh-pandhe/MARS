@@ -20,7 +20,7 @@ class SemanticVisionNode(Node):
         
         # 1. Parameters
         self.declare_parameter('robot_name', 'tb1')
-        self.robot_name = self.get_parameter('robot_name').get_value()
+        self.robot_name = self.get_parameter('robot_name').value
         
         self.bridge = CvBridge()
         self.current_pose = (0.0, 0.0, 0.0) # (x, y, yaw)
