@@ -458,7 +458,7 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
     start_gazebo(headless=headless)
     
     print("[train_multi] Initializing PettingZoo Swarm Environment for Evaluation...")
-    env = PettingZooSwarmEnv(max_steps=150)
+    env = PettingZooSwarmEnv(max_steps=1200)
     
     print(f"[train_multi] --- Running Multi-Agent Swarm Evaluation (Episodes: {episodes}) ---")
     
@@ -472,7 +472,7 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
             print(f"  {agent} Target Goal: {env.goal_positions[agent]}")
             
         active = True
-        while active and steps < 150:
+        while active and steps < 1200:
             actions = {}
             for agent in env.agents:
                 policy = algo.get_policy("shared_policy")
