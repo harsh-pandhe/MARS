@@ -81,6 +81,14 @@ class SemanticVisionNode(Node):
         self.latest_scan = msg
 
     def image_callback(self, msg):
+        # Throttle processing to 5 Hz (every 0.2 seconds) to avoid CPU bottleneck
+        now = self.get_clock().now()
+        if hasattr(self, 'last_process_time'):
+            dt = (now - self.last_process_time).nanoseconds / 1e9
+            if dt < 0.2:
+                return
+        self.last_process_time = now
+
         try:
             # Convert ROS Image to OpenCV BGR image
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
