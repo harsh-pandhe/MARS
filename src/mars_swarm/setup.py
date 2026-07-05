@@ -30,6 +30,7 @@ setup(
             'robot_killer = mars_swarm.robot_killer:main',
             'tf_relay = mars_swarm.tf_relay:main',
             'evaluate_benchmarks = mars_swarm.evaluate_benchmarks:main',
+            'semantic_vision = mars_swarm.semantic_vision:main',
         ],
     },
 )

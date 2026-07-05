@@ -385,5 +385,52 @@ class TestSwarmLogic(unittest.TestCase):
         
         print("[test_sparse_decentralized_consensus] All assertions passed successfully!")
 
+    def test_gnn_scale_invariance(self):
+        """
+        Verify that the GNN policy handles observations from expanded swarms (N=5 and N=10)
+        and processes them without dimension mismatch exceptions.
+        """
+        import torch
+        from train_multi import TorchCentralizedCriticModel
+        from gymnasium.spaces import Box
+        
+        # 1. Create model instance
+        obs_space = Box(low=-np.inf, high=np.inf, shape=(46,), dtype=np.float32)
+        action_space = Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        model = TorchCentralizedCriticModel(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=4,  # action distribution parameters
+            model_config={},
+            name="gnn_test"
+        )
+        
+        # 2. Test with N=5 agents (4 neighbors)
+        n5_obs = np.random.rand(5, 46).astype(np.float32)
+        # Pad neighbor dimensions appropriately
+        n5_obs[:, 28:28 + 4 * 2] = np.random.rand(5, 8).astype(np.float32) * 5.0 # distances < 9.0
+        n5_obs[:, 28 + 4 * 2:] = np.tile([10.0, 0.0], (5, 5)) # padded default values
+        
+        input_dict = {"obs": torch.as_tensor(n5_obs)}
+        action_out, _ = model.forward(input_dict, None, None)
+        self.assertEqual(action_out.shape, (5, 4))
+        
+        # 3. Test with N=10 agents (9 neighbors)
+        n10_obs = np.random.rand(10, 46).astype(np.float32)
+        n10_obs[:, 28:46] = np.random.rand(10, 18).astype(np.float32) * 5.0
+        
+        input_dict = {"obs": torch.as_tensor(n10_obs)}
+        action_out, _ = model.forward(input_dict, None, None)
+        self.assertEqual(action_out.shape, (10, 4))
+        
+        # 4. Verify central value function with central critic (N=5)
+        # Opponent observations should be size: 9 * 46 = 414, opponent actions: 9 * 2 = 18
+        opp_obs = torch.zeros((5, 414), dtype=torch.float32)
+        opp_acts = torch.zeros((5, 18), dtype=torch.float32)
+        val_out = model.central_value_function(torch.as_tensor(n5_obs), opp_obs, opp_acts)
+        self.assertEqual(val_out.shape, (5,))
+        
+        print("[test_gnn_scale_invariance] All assertions passed successfully!")
+
 if __name__ == '__main__':
     unittest.main()

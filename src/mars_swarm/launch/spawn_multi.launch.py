@@ -81,6 +81,12 @@ def launch_setup(context, *args, **kwargs):
   ros_type_name: "geometry_msgs/msg/Twist"
   gz_type_name: "gz.msgs.Twist"
   direction: ROS_TO_GZ
+
+- ros_topic_name: "/{namespace}/camera/image_raw"
+  gz_topic_name: "/{namespace}/camera"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
 """
         temp_file = tempfile.NamedTemporaryFile(suffix='.yaml', delete=False)
         temp_file.write(config_content.encode('utf-8'))
