@@ -458,7 +458,7 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
     start_gazebo(headless=headless)
     
     print("[train_multi] Initializing PettingZoo Swarm Environment for Evaluation...")
-    env = PettingZooSwarmEnv(max_steps=1200)
+    env = PettingZooSwarmEnv(max_steps=1200, continuous_exploration=True)
     
     print(f"[train_multi] --- Running Multi-Agent Swarm Evaluation (Episodes: {episodes}) ---")
     

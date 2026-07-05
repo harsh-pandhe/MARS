@@ -136,11 +136,12 @@ class SwarmNode(Node):
 class PettingZooSwarmEnv(ParallelEnv):
     metadata = {'render_modes': ['human'], "name": "mars_swarm_v0"}
 
-    def __init__(self, agents=['tb1', 'tb2', 'tb3'], max_steps=300):
+    def __init__(self, agents=['tb1', 'tb2', 'tb3'], max_steps=300, continuous_exploration=False):
         super().__init__()
         self.agents = agents
         self.possible_agents = agents[:]
         self.max_steps = max_steps
+        self.continuous_exploration = continuous_exploration
         self.step_count = 0
         
         self.num_lidar_beams = 24
@@ -708,7 +709,15 @@ class PettingZooSwarmEnv(ParallelEnv):
             goal_reached = dist < 0.3
             if goal_reached:
                 reward += 20.0
-                
+                if self.continuous_exploration:
+                    # Dynamically allocate a new target goal
+                    goal_idx = self.np_random.integers(0, len(self.safe_goals))
+                    self.goal_positions[agent] = np.array(self.safe_goals[goal_idx], dtype=np.float32)
+                    new_dist = math.hypot(self.goal_positions[agent][0] - x, self.goal_positions[agent][1] - y)
+                    self.prev_goal_dists[agent] = new_dist
+                    obs_dict[agent][24] = new_dist
+                    print(f"[{agent}] Goal reached! Dynamically assigned new goal: {self.goal_positions[agent]}")
+                    
             if collision:
                 reward -= 20.0
                 
@@ -729,7 +738,10 @@ class PettingZooSwarmEnv(ParallelEnv):
                         
             rewards[agent] = reward
             
-            terminated = collision or goal_reached
+            if self.continuous_exploration:
+                terminated = collision
+            else:
+                terminated = collision or goal_reached
             terminations[agent] = terminated
             truncations[agent] = truncated
             infos[agent] = {
