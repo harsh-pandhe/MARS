@@ -646,7 +646,8 @@ class PettingZooSwarmEnv(ParallelEnv):
         if res.success:
             return float(res.x[0]), float(res.x[1])
         else:
-            return 0.0, 0.0
+            # Fallback to nominal controls to prevent permanent deadlock
+            return v_nom, w_nom
 
     def step(self, actions):
         # Apply actions
