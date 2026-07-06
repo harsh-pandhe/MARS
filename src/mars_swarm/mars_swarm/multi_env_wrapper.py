@@ -657,6 +657,16 @@ class PettingZooSwarmEnv(ParallelEnv):
                 v_nom = float(action[0])
                 w_nom = float(action[1])
                 
+                # Active Collision Avoidance Safeguard (ACAS) to prevent wall clipping
+                scan_msg = self.node.scan_msgs[agent]
+                if scan_msg is not None:
+                    raw_ranges = np.array(scan_msg.ranges, dtype=np.float32)
+                    raw_ranges[raw_ranges <= 0.05] = scan_msg.range_max
+                    raw_ranges = np.nan_to_num(raw_ranges, nan=scan_msg.range_max, posinf=scan_msg.range_max, neginf=scan_msg.range_min)
+                    min_dist = np.min(raw_ranges)
+                    if min_dist < 0.22 and v_nom > 0.0:
+                        v_nom = -0.08  # Slowly back away from wall/obstacle
+                
                 # Filter velocities via Control Barrier Function
                 v_safe, w_safe = self._apply_cbf(agent, v_nom, w_nom)
                 
