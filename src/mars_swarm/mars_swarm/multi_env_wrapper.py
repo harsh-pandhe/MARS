@@ -544,10 +544,18 @@ class PettingZooSwarmEnv(ParallelEnv):
             if agent in self.node.paths:
                 self.node.paths[agent].poses = []
         
-        # Shuffle goal positions from safe targets
+        # Shuffle goal positions from safe targets close to starting positions
         for agent in self.agents:
-            goal_idx = self.np_random.integers(0, len(self.safe_goals))
-            self.goal_positions[agent] = np.array(self.safe_goals[goal_idx], dtype=np.float32)
+            x, y, _ = self.spawn_poses[agent]
+            valid_goals = []
+            for goal in self.safe_goals:
+                dist = math.hypot(goal[0] - x, goal[1] - y)
+                if 0.5 < dist < 4.5:
+                    valid_goals.append(goal)
+            if len(valid_goals) == 0:
+                valid_goals = self.safe_goals
+            goal_idx = self.np_random.integers(0, len(valid_goals))
+            self.goal_positions[agent] = np.array(valid_goals[goal_idx], dtype=np.float32)
             
         self._reset_sim()
         time.sleep(2.0)
@@ -721,9 +729,16 @@ class PettingZooSwarmEnv(ParallelEnv):
             if goal_reached:
                 reward += 20.0
                 if self.continuous_exploration:
-                    # Dynamically allocate a new target goal
-                    goal_idx = self.np_random.integers(0, len(self.safe_goals))
-                    self.goal_positions[agent] = np.array(self.safe_goals[goal_idx], dtype=np.float32)
+                    # Dynamically allocate a new target goal close to current position
+                    valid_goals = []
+                    for goal in self.safe_goals:
+                        g_dist = math.hypot(goal[0] - x, goal[1] - y)
+                        if 0.5 < g_dist < 4.5:
+                            valid_goals.append(goal)
+                    if len(valid_goals) == 0:
+                        valid_goals = self.safe_goals
+                    goal_idx = self.np_random.integers(0, len(valid_goals))
+                    self.goal_positions[agent] = np.array(valid_goals[goal_idx], dtype=np.float32)
                     new_dist = math.hypot(self.goal_positions[agent][0] - x, self.goal_positions[agent][1] - y)
                     self.prev_goal_dists[agent] = new_dist
                     obs_dict[agent][24] = new_dist
