@@ -35,6 +35,7 @@ show_help() {
     echo "  --resilience <path> Evaluate trained policy in GUI and inject failure using robot_killer"
     echo "  --record <path>     Evaluate trained policy (headless) and record ROS bag of odom/scans"
     echo "  --benchmark [path]  Run quantitative benchmarking across baselines & stress tests, and generate plots"
+    echo "  --coverage-demo [N] Run Frontier Heuristic for N steps (default 1200) to maximize area coverage in Gazebo GUI + RViz"
     echo "  --slam              Run SLAM Toolbox mapping on tb1 (with Gazebo GUI & RViz)"
     echo "  --nav               Run Nav2 Stack on the saved sandbox map for all 3 robots (with Gazebo GUI & RViz)"
     echo "  --help              Show this help menu"
@@ -223,6 +224,24 @@ case "$1" in
             echo "Running full quantitative benchmarking suite including MAPPO policy from ${CHECKPOINT}..."
             python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --checkpoint "${CHECKPOINT}" ${GUI_FLAG}
         fi
+        ;;
+    --coverage-demo)
+        MAX_STEPS="1200"
+        HEADLESS_FLAG=""
+        shift
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --headless)
+                    HEADLESS_FLAG="--headless"
+                    ;;
+                *)
+                    MAX_STEPS="$1"
+                    ;;
+            esac
+            shift
+        done
+        echo "Running Frontier Heuristic coverage demo (Gazebo GUI + RViz)..."
+        python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" ${HEADLESS_FLAG}
         ;;
     --help|*)
         show_help

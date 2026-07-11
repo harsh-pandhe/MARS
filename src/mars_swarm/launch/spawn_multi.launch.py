@@ -119,22 +119,30 @@ def launch_setup(context, *args, **kwargs):
         )
         return bridge_node, spawn_node
 
-    bridge_tb1, spawn_tb1 = make_robot_nodes('tb1', 'tb1', '0.00', '-0.7113', '0.20', '-1.5708')
-    bridge_tb2, spawn_tb2 = make_robot_nodes('tb2', 'tb2', '-0.25', '-1.1443', '0.20', '0.5236')
-    bridge_tb3, spawn_tb3 = make_robot_nodes('tb3', 'tb3', '0.25', '-1.1443', '0.20', '2.6180')
+    # Horizontal line at y=0, all facing south (-1.5708) into open floor. Confirmed-clear
+    # points: (0,0)=0.99 m (probe); (+/-0.5,-0.289) were clear in training (tb2/tb3 roamed
+    # freely). The prior triangle put tb1 at (0,+0.577) INSIDE north furniture AND facing
+    # south straight into tb2/tb3 -> tb1 wedged, 0 movement, -20 collision every episode.
+    # Now teammates sit to each robot's SIDE (0.7 m -> ~0.48 m lidar, no forward block) and
+    # every robot's front (south) is open. theta1 = -1.5708 is unchanged, so the odom
+    # frame / coverage grid / safe_goals stay valid; only positions move. env spawn_poses
+    # and static TFs below match (all relative yaw 0 since all headings equal).
+    bridge_tb1, spawn_tb1 = make_robot_nodes('tb1', 'tb1', '0.00', '0.00', '0.20', '-1.5708')
+    bridge_tb2, spawn_tb2 = make_robot_nodes('tb2', 'tb2', '-0.70', '0.00', '0.20', '-1.5708')
+    bridge_tb3, spawn_tb3 = make_robot_nodes('tb3', 'tb3', '0.70', '0.00', '0.20', '-1.5708')
 
     # 4. TF Relay and Static Transforms to link the namespaces under tb1/odom
     static_tf_tb1_tb2 = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_tb1_tb2',
-        arguments=['--x', '0.433', '--y', '-0.25', '--z', '0.0', '--yaw', '2.0944', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb2/odom']
+        arguments=['--x', '0.0', '--y', '-0.7', '--z', '0.0', '--yaw', '0.0', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb2/odom']
     )
     static_tf_tb1_tb3 = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_tb1_tb3',
-        arguments=['--x', '0.433', '--y', '0.25', '--z', '0.0', '--yaw', '-2.0944', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb3/odom']
+        arguments=['--x', '0.0', '--y', '0.7', '--z', '0.0', '--yaw', '0.0', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb3/odom']
     )
     tf_relay_node = Node(
         package='mars_swarm',

@@ -407,8 +407,12 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     
     for i in range(1, iterations + 1):
         result = algo.train()
-        reward_mean = result.get('episode_reward_mean', float('nan'))
-        
+        # New RLlib nests episode stats under 'env_runners'; fall back to top level.
+        reward_mean = result.get('env_runners', {}).get(
+            'episode_reward_mean',
+            result.get('episode_reward_mean', float('nan'))
+        )
+
         # Policy loss details
         policy_stats = result.get('info', {}).get('learner', {}).get('shared_policy', {}).get('learner_stats', {})
         loss = policy_stats.get('policy_loss', 0.0)

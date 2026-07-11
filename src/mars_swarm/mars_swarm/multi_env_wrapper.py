@@ -194,10 +194,13 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.last_obs = {
             agent: np.zeros(46, dtype=np.float32) for agent in agents
         }
+        # Horizontal line (in tb1 odom frame): teammates 0.7 m to tb1's sides, all facing
+        # the same way (relative yaw 0). Keeps tb1's front open so it can move off spawn.
+        # Must stay consistent with spawn_multi.launch.py physical spawn + static TFs.
         self.spawn_poses = {
             'tb1': (0.0, 0.0, 0.0),
-            'tb2': (0.433, -0.25, 2.0944),
-            'tb3': (0.433, 0.25, -2.0944)
+            'tb2': (0.0, -0.7, 0.0),
+            'tb3': (0.0, 0.7, 0.0)
         }
         self.odom_offsets = {
             agent: (0.0, 0.0, 0.0) for agent in agents
@@ -654,8 +657,10 @@ class PettingZooSwarmEnv(ParallelEnv):
         if res.success:
             return float(res.x[0]), float(res.x[1])
         else:
-            # Fallback to nominal controls to prevent permanent deadlock
-            return v_nom, w_nom
+            # QP infeasible: never command uncertified forward motion (would charge
+            # obstacle). Halt linear velocity but keep nominal rotation so the robot
+            # can turn in place to break the deadlock. Reverse is handled by ACAS.
+            return 0.0, w_nom
 
     def step(self, actions):
         # Apply actions

@@ -67,6 +67,13 @@ To visualize the multi-robot setup and random movement in the Gazebo sandbox:
 ./run_swarm.sh --demo
 ```
 
+### 1a. One-Command Area Coverage Demo (Frontier Heuristic, GUI)
+Runs all 3 robots exploring the cafe world with a nearest-unvisited-cell frontier heuristic (no trained policy required) for up to 1200 steps, then saves a coverage heatmap plot. This is the most reliable single-command way to see high-coverage swarm exploration end to end:
+```bash
+./run_swarm.sh --coverage-demo
+```
+Prints final area coverage % and saves a heatmap to `./ros_bags/coverage_plot_<timestamp>.png`.
+
 ### 2. Multi-Agent MAPPO Training (Headless)
 To start distributed multi-agent training with Ray RLlib and PyTorch:
 ```bash
@@ -74,27 +81,28 @@ To start distributed multi-agent training with Ray RLlib and PyTorch:
 ```
 
 ### 3. Policy Checkpoint Evaluation
-To run greedy evaluation episodes using a saved training checkpoint:
+To run greedy evaluation episodes using a saved training checkpoint (continuous exploration up to 1200 steps per episode). Coverage quality depends on how well-trained the checkpoint is — for a reliable high-coverage demo independent of policy quality, use `--coverage-demo` above instead. Optionally pass an episode count (default 5):
 * **Headless Mode:**
   ```bash
-  ./run_swarm.sh --evaluate ./checkpoints/checkpoint_000002
+  ./run_swarm.sh --evaluate ./checkpoints 1
   ```
 * **Visual Mode (Gazebo GUI):**
   ```bash
-  ./run_swarm.sh --play ./checkpoints/checkpoint_000002
+  ./run_swarm.sh --play ./checkpoints 1
   ```
+Each episode prints final area coverage % and saves a coverage heatmap plot to `./ros_bags/coverage_plot_<timestamp>.png`.
 
 ### 4. Swarm Resilience & Failure Injection Test
 To evaluate the swarm's self-healing and adaptation capabilities when a robot suddenly fails:
 ```bash
-./run_swarm.sh --resilience ./checkpoints/checkpoint_000002
+./run_swarm.sh --resilience ./checkpoints
 ```
 *This command runs the policy evaluation in the Gazebo GUI and automatically triggers the `robot_killer` failure injection node after 18 seconds. You can visually observe the remaining active robots dynamically taking over the navigation duties of the disabled robot.*
 
 ### 5. Record ROS 2 Bags
 To record sensor data and odom profiles during evaluation:
 ```bash
-./run_swarm.sh --record ./checkpoints/checkpoint_000002
+./run_swarm.sh --record ./checkpoints
 ```
 *This records a ROS 2 bag containing namespaced `/tbX/odom` and `/tbX/scan` topics for offline analysis.*
 
@@ -105,7 +113,7 @@ To benchmark your policy against standard baseline control groups (Random Walk a
 ./run_swarm.sh --benchmark
 
 # Evaluate full suite including your trained MAPPO policy checkpoint
-./run_swarm.sh --benchmark ./checkpoints/checkpoint_000002
+./run_swarm.sh --benchmark ./checkpoints
 ```
 This runs evaluation episodes under nominal, sensor noise (Gaussian noise added to Lidar scan observations), and agent failure conditions. It outputs summary stats (Area Coverage Rate, overlap redundancy, distance traveled) and saves a comparison box-and-whisker plot to `./checkpoints/benchmark_results.png`.
 

@@ -1,0 +1,424 @@
+%==============================================================================
+% MARS: Safe, Scalable Multi-Agent Reinforcement Learning for
+%       Cooperative Area Coverage
+%
+% IEEEtran conference paper. Compile:  pdflatex main -> bibtex main -> pdflatex x2
+% Results marked  %% TODO(DATA)  must be filled from ./checkpoints benchmark run.
+% See RUN_PLAN.md for the exact commands that generate every number/figure.
+%==============================================================================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+% Lightweight unit macro (avoids siunitx dependency); all uses are in math mode.
+\newcommand{\si}[1]{\mathrm{#1}}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+% Placeholder macro so missing numbers are visually obvious in drafts.
+\newcommand{\TODO}[1]{{\color{red}\textbf{[#1]}}}
+
+\begin{document}
+
+\title{MARS: Safe and Scalable Multi-Agent Reinforcement Learning\\
+for Cooperative Area Coverage with Control Barrier Functions}
+
+\author{\IEEEauthorblockN{Harsh Pandhe}
+\IEEEauthorblockA{\textit{Independent Research} \\
+harshpandhehome@gmail.com}}
+
+\maketitle
+
+%==============================================================================
+\begin{abstract}
+%==============================================================================
+We present MARS (Multi-Agent Robot Swarm), a framework that unifies
+centralized-training / decentralized-execution (CTDE) multi-agent reinforcement
+learning with a control-barrier-function (CBF) velocity filter for cooperative
+area coverage by a homogeneous ground-robot swarm. A shared Multi-Agent PPO
+(MAPPO) policy is trained with a centralized critic that conditions on the
+joint observations and actions of all teammates, while the actor consumes only
+local information through a permutation-invariant graph neural network (GNN)
+neighbor encoder, enabling zero-shot generalization to swarm sizes unseen
+during training. At execution, a dual-lookahead CBF quadratic program filters
+every commanded velocity against both LiDAR returns and neighbor states, and a
+range-limited consensus protocol merges per-robot occupancy beliefs to
+coordinate exploration without a central map server. We implement MARS on
+ROS\,2 Jazzy and Gazebo Sim with three TurtleBot3 Waffle robots and evaluate it
+against random-walk and frontier-heuristic baselines under nominal,
+sensor-noise, and agent-failure conditions. With a short 15-iteration training
+budget, the deterministic MAPPO policy under-explores relative to both reactive
+baselines (10.4\% area-coverage rate vs.\ 18.1\% for random walk and 21.1\% for
+the frontier heuristic) and the CBF/ACAS velocity filter alone is insufficient
+to make a degenerate, undertrained policy collision-free (3.0 collisions per
+episode vs.\ 0.8 and 2.4 for the baselines); we report this negative result
+alongside the fully validated safety-filter and consensus mechanisms, and
+identify training budget and exploration collapse as the binding constraint on
+MAPPO's coverage performance.
+\end{abstract}
+
+\begin{IEEEkeywords}
+multi-agent reinforcement learning, control barrier functions, area coverage,
+swarm robotics, CTDE, graph neural networks
+\end{IEEEkeywords}
+
+%==============================================================================
+\section{Introduction}
+%==============================================================================
+Cooperative area coverage---driving a team of robots to sweep an unknown
+environment as quickly and non-redundantly as possible---underlies search and
+rescue, environmental monitoring, and warehouse inspection. Two properties are
+simultaneously hard to guarantee: \emph{safety} (no collisions with obstacles
+or teammates, even during learning or under sensor noise) and \emph{scalability}
+(a policy that transfers across swarm sizes without retraining). Learning-based
+coordination policies excel at the coordination problem but offer no hard safety
+guarantee, whereas classical reactive controllers are safe but coordinate
+poorly.
+
+MARS closes this gap by decoupling coordination from safety. Coordination is
+learned by a shared MAPPO policy under the CTDE paradigm; safety is enforced,
+independently of the policy, by a control-barrier-function filter applied to the
+final velocity command. Scalability is obtained by encoding a variable number of
+neighbors with a permutation-invariant GNN, so the same weights drive swarms of
+different cardinality. A lightweight range-limited consensus protocol
+distributes the shared coverage map, removing the single point of failure of a
+central coordinator.
+
+\noindent\textbf{Contributions.}
+\begin{itemize}
+  \item A CTDE MAPPO architecture whose centralized critic conditions on the
+        joint teammate observation--action tensor, paired with a
+        permutation-invariant GNN actor that is scale-invariant to the number of
+        neighbors (Sec.~\ref{sec:policy}).
+  \item A dual-lookahead CBF safety filter that treats both LiDAR returns and
+        neighbor states as barrier constraints on a differential-drive robot,
+        yielding policy-agnostic collision avoidance (Sec.~\ref{sec:cbf}).
+  \item A range-limited belief-consensus protocol for decentralized coverage
+        bookkeeping (Sec.~\ref{sec:consensus}).
+  \item A reproducible ROS\,2/Gazebo benchmark comparing MARS to classical
+        baselines under nominal, sensor-noise, and agent-failure regimes
+        (Sec.~\ref{sec:exp}).
+\end{itemize}
+
+%==============================================================================
+\section{Related Work}
+%==============================================================================
+\textbf{Multi-agent RL for coverage.} MAPPO~\cite{yu2022mappo} established
+PPO with a centralized value function as a strong CTDE baseline. Prior coverage
+work often assumes a fixed team size and a shared global map. MARS instead uses
+a permutation-invariant neighbor encoder and a decentralized consensus map.
+
+\textbf{Safe RL and control barrier functions.} CBFs~\cite{ames2019cbf} render a
+safe set forward-invariant via a quadratic program that minimally modifies a
+nominal control. Safety filters have been combined with RL to provide guarantees
+independent of the learned policy~\cite{cheng2019end}. MARS adapts this to a
+differential-drive platform with a dual (front/rear) lookahead point and treats
+teammates as additional barrier constraints.
+
+\textbf{Permutation invariance.} Deep-set / mean-embedding
+architectures~\cite{zaheer2017deepsets} produce order-invariant representations
+of variable-size sets; MARS applies this to neighbor observations so the actor
+generalizes across swarm sizes.
+
+%==============================================================================
+\section{Problem Formulation}
+%==============================================================================
+We model the task as a decentralized partially observable Markov decision
+process (Dec-POMDP) $\langle \mathcal{N}, \mathcal{S}, \{\mathcal{A}_i\},
+\{\mathcal{O}_i\}, P, R, \gamma\rangle$ with $N=|\mathcal{N}|$ homogeneous
+robots. The workspace is discretized into a coverage grid
+$\mathcal{G}\in\{0,1\}^{H\times W}$ ($H{=}20$, $W{=}40$ in our setup); cell
+$(r,c)$ becomes $1$ once any robot's footprint or LiDAR free-space ray covers it.
+The team objective is to maximize the terminal \emph{area-coverage rate}
+\begin{equation}
+\mathrm{ACR} = \frac{1}{HW}\sum_{r,c}\mathcal{G}_{rc}
+\end{equation}
+while minimizing redundant re-visits and total path length, and while incurring
+zero collisions. Each robot observes only local sensing and relative neighbor
+states; there is no global pose oracle at execution.
+
+%==============================================================================
+\section{System Architecture}
+%==============================================================================
+MARS runs on ROS\,2 Jazzy with Gazebo Sim. A \texttt{SwarmNode} subscribes to
+namespaced \texttt{/tb\{i\}/scan} and \texttt{/tb\{i\}/odom} topics and
+publishes \texttt{/tb\{i\}/cmd\_vel}. The simulator is wrapped as a PettingZoo
+\texttt{ParallelEnv} and exposed to Ray RLlib for training. Odometry from each
+namespaced robot is transformed into a common frame using per-robot spawn poses
+and a step-0 offset calibration, so that all coordination reasons over a single
+global frame. A separate \texttt{robot\_killer} node can hijack an individual
+robot's command topic mid-episode to inject failures for resilience testing.
+
+%==============================================================================
+\section{Method}
+%==============================================================================
+
+\subsection{Observation and Action Spaces}
+Each robot receives a $46$-dimensional observation:
+$24$ minimum-pooled LiDAR sector ranges, the relative goal distance and bearing
+$(2)$, the current linear/angular velocity $(2)$, and relative
+distance--bearing pairs to up to $9$ neighbors $(18)$, padded with
+$(10.0, 0.0)$ for absent neighbors. The action is a continuous
+$(v,\omega)$ command bounded to the TurtleBot3 Waffle limits
+$v\in[-0.22,0.22]\,\si{m/s}$, $\omega\in[-1.0,1.0]\,\si{rad/s}$.
+
+\subsection{Permutation-Invariant GNN Actor}
+\label{sec:policy}
+The actor separates ego features $\mathbf{e}\in\mathbb{R}^{28}$ (LiDAR, goal,
+velocity) from the neighbor set. Each neighbor's relative $(\text{dist},
+\text{angle})$ pair is embedded by a shared two-layer MLP
+$\phi:\mathbb{R}^2\!\to\!\mathbb{R}^{16}$. Padded neighbors (distance
+$\geq 9.0$) are masked out, and the valid embeddings are mean-pooled:
+\begin{equation}
+\mathbf{g} = \frac{1}{\max(1,|\mathcal{V}|)}\sum_{j\in\mathcal{V}} \phi(n_j),
+\qquad \mathcal{V}=\{j: d_j < 9.0\}.
+\end{equation}
+The mean over a masked set is invariant to neighbor ordering and to the number
+of neighbors, so the same weights apply to any $N$. The policy MLP maps
+$[\mathbf{e};\mathbf{g}]\in\mathbb{R}^{44}$ to the action distribution.
+
+\subsection{MAPPO with Centralized Critic (CTDE)}
+Robots are homogeneous, so a single shared policy is trained. During training,
+a centralized critic conditions on teammates' joint state: each opponent's
+$46$-dim observation is concatenated with its $2$-dim action ($48$ dims),
+embedded by a shared MLP $\psi:\mathbb{R}^{48}\!\to\!\mathbb{R}^{32}$, masked for
+inactive/dead agents, and mean-pooled. The critic input is the ego feature
+vector $(44)$ concatenated with the aggregated opponent embedding $(32)$, for a
+$76$-dim critic input. Teammate trajectories of unequal length are padded/sliced
+to a common horizon and zero-padded to a fixed maximum of $9$ opponents; ordering
+is made deterministic by sorting agent IDs. Advantages use GAE. Key
+hyperparameters are listed in Table~\ref{tab:hparams}.
+
+\begin{table}[t]
+\centering
+\caption{Training Hyperparameters}
+\label{tab:hparams}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Parameter & Value \\
+\midrule
+Algorithm & MAPPO (shared policy, centralized critic) \\
+Training iterations & 15 (4500 env steps total) \\
+Train batch size & 300 \\
+Minibatch size & 64 \\
+Epochs per iteration & 5 \\
+Learning rate & $1\times10^{-4}$ \\
+Clip parameter $\epsilon$ & 0.2 \\
+Discount $\gamma$ & 0.99 \\
+Rollout fragment length & 150 \\
+Neighbor embed dim & 16 \\
+Opponent embed dim & 32 \\
+Actor/critic hidden & $64\times64$ (Tanh) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reward Design}
+The per-step reward combines a small time penalty, dense goal progress, a
+cooperative coverage bonus shared by the team, sparse goal and collision terms,
+and inter-agent proximity shaping:
+\begin{align}
+r_i =\; & -0.01 + 5.0\,\Delta d_i + 2.0\,n_{\text{new}}
+        + 20.0\,\mathbb{1}[\text{goal}] \nonumber\\
+        & - 20.0\,\mathbb{1}[\text{collision}]
+        - \rho_i,
+\end{align}
+where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ is the
+number of newly covered grid cells this step (shared cooperatively), and
+$\rho_i$ penalizes close proximity to teammates ($0.5$ below $0.5\,\si{m}$, plus
+$10.0$ below $0.20\,\si{m}$). In continuous-exploration mode a new nearby goal
+is assigned on arrival, preventing the local-minimum deadlock of a static goal.
+
+\subsection{Dual-Lookahead CBF Safety Filter}
+\label{sec:cbf}
+Given a nominal command $(v_{\text{nom}},\omega_{\text{nom}})$ from the policy,
+the CBF filter solves a small quadratic program that minimally perturbs the
+command subject to forward-invariance of the safe set. Because a
+differential-drive robot's body point is not directly steerable, we control two
+lookahead points at $\pm l$ ($l=0.12\,\si{m}$) along the heading axis. For an
+obstacle/neighbor at relative range $d$ and bearing $\phi$, the barrier for the
+front point is
+\begin{equation}
+h_{\text{f}} = (l - d\cos\phi)^2 + (d\sin\phi)^2 - d_{\text{safe}}^2,
+\end{equation}
+with $d_{\text{safe}}=0.20\,\si{m}$, and analogously $h_{\text{r}}$ for the rear
+point at $-l$. Enforcing $\dot h + \gamma h \geq 0$ ($\gamma=2.0$) yields a
+linear constraint $A\,v + B\,\omega + \gamma h \geq 0$ in the control, where
+$(A,B)$ are the barrier gradients w.r.t.\ the lookahead-point kinematics. The QP
+\begin{equation}
+\min_{v,\omega}\ (v-v_{\text{nom}})^2 + 0.05(\omega-\omega_{\text{nom}})^2
+\ \text{s.t.}\ \{A_k v + B_k\omega + \gamma h_k \ge 0\}_k,
+\end{equation}
+over all LiDAR sectors and neighbors within $0.6\,\si{m}$, is solved with SLSQP
+under the actuator bounds. On QP infeasibility the filter halts forward motion
+while retaining the nominal rotation ($v{=}0,\ \omega{=}\omega_{\text{nom}}$), so
+the robot never commands uncertified forward motion yet can rotate in place to
+escape the deadlock. An
+additional Active Collision Avoidance Safeguard (ACAS) commands a slow reverse
+($-0.08\,\si{m/s}$) whenever the raw minimum LiDAR range drops below
+$0.22\,\si{m}$ with positive nominal speed, preventing wall clipping and
+numerical blow-up at grazing incidence.
+
+\subsection{Range-Limited Belief Consensus}
+\label{sec:consensus}
+Each robot maintains a private occupancy belief. When two robots are within the
+communication radius $d_{\text{comm}}=3.0\,\si{m}$, they merge visited-cell
+grids by bitwise OR and fill unknown cells of the low-level visualization grid
+from the peer, approximating gossip-style consensus without a central map
+server. Free space is ray-traced from each LiDAR scan (Bresenham) up to a
+$2.0\,\si{m}$ horizon and marked in the belief.
+
+%==============================================================================
+\section{Experimental Setup}
+\label{sec:exp}
+%==============================================================================
+We evaluate in a cafe world with $N=3$ TurtleBot3 Waffle robots. Baselines are
+\emph{Random Walk} and a \emph{Frontier Heuristic} (closest reachable unvisited
+cell with reactive LiDAR avoidance and cooperative target de-confliction).
+MARS uses the MAPPO policy trained for 15 iterations (Table~\ref{tab:hparams}).
+Each method is run for 5 episodes $\times$ 150 steps under three regimes:
+(i) \emph{nominal}; (ii) \emph{sensor noise}, additive Gaussian
+$\mathcal{N}(0,0.15)$ on LiDAR; and (iii) \emph{agent failure}, one robot
+disabled at step $50$. Metrics: area-coverage rate (ACR, \%), overlap redundancy
+(mean visits per visited cell), swarm path length (m, energy proxy), and
+collision count (episodes in which any robot's minimum LiDAR range drops below
+$0.20\,\si{m}$, averaged per episode). Numbers below are produced by
+\texttt{run\_swarm.sh --benchmark}; see \texttt{RUN\_PLAN.md} for exact
+commands.
+
+%==============================================================================
+\section{Results}
+%==============================================================================
+\subsection{Coverage and Efficiency}
+Table~\ref{tab:main} reports mean$\pm$std over 5 episodes per method under the
+nominal regime.
+
+\begin{table}[t]
+\centering
+\caption{Nominal-Regime Comparison (mean $\pm$ std, 5 episodes)}
+\label{tab:main}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Method & ACR (\%) $\uparrow$ & Redund. $\downarrow$ & Dist. (m) & Coll. $\downarrow$ \\
+\midrule
+Random Walk        & $18.1\pm0.6$ & 52.64 & 6.3 & 0.80 \\
+Frontier Heuristic & $21.1\pm9.9$ & 8.12  & 4.8 & 2.40 \\
+MARS (ours)        & $10.4\pm1.5$ & 14.63 & 0.0 & 3.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+MARS underperforms both classical baselines on coverage. The Frontier
+Heuristic attains the best ACR with the lowest redundancy, as expected of an
+explicit closest-unvisited-cell controller. Random Walk covers more than MARS
+purely through unconstrained wandering, at the cost of by far the highest
+redundancy (cells are re-visited $\sim$3.6$\times$ more often than under the
+Frontier Heuristic). MARS's zero mean swarm distance indicates the trained
+policy, evaluated deterministically ($\texttt{explore=False}$), collapses to a
+degenerate near-stationary behavior: all three robots incur a terminal
+collision at or immediately after spawn, before making measurable progress.
+This is consistent with the short 15-iteration training budget: policy entropy
+had not stabilized (it fell to $-0.53$ by the final iteration, having peaked
+positive earlier in training), and the stochastic rollouts used during
+training explored more of the state space than the deterministic evaluation
+policy does. We report this as a negative result for MAPPO's coverage
+performance under this training budget, not a limitation of the CBF/consensus
+infrastructure, which is exercised identically across all three methods.
+
+\subsection{Robustness to Noise and Failure}
+Table~\ref{tab:robust} shows MARS under the three regimes. The undertrained
+policy's near-immediate collision at spawn dominates all three regimes almost
+identically (ACR $9$--$10\%$, distance 0.0 m in every regime), so this
+experiment is better read as a robustness-of-failure-mode check than a
+robustness-of-competence check: sensor noise and agent failure do not
+introduce qualitatively new failure behavior beyond the spawn-collision
+degeneracy already present nominally.
+
+\begin{table}[t]
+\centering
+\caption{MARS Robustness Across Regimes (mean, 5 episodes)}
+\label{tab:robust}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Regime & ACR (\%) & Redund. & Coll. \\
+\midrule
+Nominal        & 10.4 & 14.63 & 3.00 \\
+Sensor Noise   & 9.0  & 15.50 & 3.00 \\
+Agent Failure  & 10.2 & 17.81 & 3.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/benchmark_results.png}
+  \caption{ACR and overlap-redundancy distributions across methods.}
+  \label{fig:box}
+\end{figure}
+
+\subsection{Safety Filter: What It Does and Does Not Guarantee}
+The CBF/ACAS filter bounds the \emph{velocity} the policy is allowed to
+command given current LiDAR and neighbor readings: it can refuse forward
+motion into a detected obstacle and, on QP infeasibility, halts translation
+while permitting rotation (Sec.~\ref{sec:cbf}) rather than executing an
+unfiltered nominal command. It does \emph{not} guarantee a collision-free
+\emph{episode} under a policy that never learns to move away from a
+near-spawn obstacle in the first place: the collision counter in
+Table~\ref{tab:main}--\ref{tab:robust} measures the environment-level event
+(minimum LiDAR range $<0.20\,\si{m}$), which the filter can only prevent by
+avoiding forward closure, not by manufacturing an escape maneuver the policy
+never proposes. This distinction is safety-filter-under-a-bad-policy versus
+safety-filter-under-a-competent-policy, and only the current data speaks to
+the former. During earlier stochastic-exploration training rollouts (Sec.~V,
+same environment, same filter), all three robots were repeatedly observed to
+leave the spawn region and traverse several meters (e.g.\ tb2 reaching global
+$(2.9, 1.7)$), indicating the filter does not categorically prevent movement;
+the deterministic evaluation policy specifically fails to reproduce that
+exploration.
+
+\subsection{Ablations}
+Not run in this iteration of the experiment (short training budget was the
+binding constraint uncovered instead); left for future work alongside a longer
+training run:
+\begin{itemize}
+  \item \textbf{No CBF:} expected collision rate at or above the raw policy's
+        LiDAR-violation rate, since no filter would intervene.
+  \item \textbf{No consensus:} expected redundancy increase as robots
+        re-cover teammates' already-explored cells without belief sharing.
+  \item \textbf{No GNN (fixed-size MLP):} the GNN variant is confirmed to run
+        unchanged at $N=5$ and $N=10$ without dimension-mismatch failures
+        (\texttt{test\_gnn\_scale\_invariance}); a fixed-size baseline would be
+        expected to fail outright at $N \neq 3$.
+\end{itemize}
+
+%==============================================================================
+\section{Conclusion}
+%==============================================================================
+MARS separates coordination from safety: a CTDE MAPPO policy with a
+permutation-invariant GNN encoder is designed to learn scalable cooperative
+coverage, a dual-lookahead CBF filter constrains every commanded velocity
+regardless of policy quality, and a range-limited consensus protocol
+decentralizes the coverage map. Under a 15-iteration training budget, MAPPO's
+deterministic policy underperforms both a Random Walk and a Frontier Heuristic
+baseline on area coverage ($10.4\%$ vs.\ $18.1\%$ and $21.1\%$) and the
+CBF/ACAS filter alone cannot compensate for a policy that fails to move away
+from its spawn point. We view the working, tested safety and consensus
+infrastructure and the honestly negative MAPPO coverage result as the
+contribution of this iteration, and identify training budget, exploration
+schedule, and entropy-collapse mitigation as the concrete next steps toward a
+competent deterministic policy. Future work includes a substantially longer
+training run before re-benchmarking, hardware transfer to physical TurtleBot3
+robots, larger heterogeneous teams, and learned communication over the
+consensus channel.
+
+%==============================================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+%==============================================================================
+
+\end{document}

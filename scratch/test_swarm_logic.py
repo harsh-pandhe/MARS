@@ -1,6 +1,10 @@
+import os
+import sys
 import unittest
 import numpy as np
 import math
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "mars_swarm", "mars_swarm"))
 
 class TestSwarmLogic(unittest.TestCase):
     def test_coordinate_transforms(self):

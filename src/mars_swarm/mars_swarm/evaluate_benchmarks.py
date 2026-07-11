@@ -2,6 +2,8 @@ import os
 import sys
 import time
 import math
+import heapq
+import signal
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +13,103 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from multi_env_wrapper import PettingZooSwarmEnv
 from train_multi import start_gazebo, kill_stale_processes, gazebo_process
 
-def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noise=False, inject_failure=False):
+
+def build_obstacle_grid(env):
+    """Downsample env.viz_grid (high-res) to the coverage grid resolution.
+    A coverage cell is an obstacle if any of its high-res sub-cells is a
+    known wall (value 100). Computed once per step and shared across agents
+    to avoid the O(cells * ratio_x * ratio_y) cost being paid per-candidate.
+    """
+    ratio_x = env.viz_resolution_x // env.grid_resolution_x
+    ratio_y = env.viz_resolution_y // env.grid_resolution_y
+    obstacle = np.zeros((env.grid_resolution_y, env.grid_resolution_x), dtype=bool)
+    for r in range(env.grid_resolution_y):
+        for c in range(env.grid_resolution_x):
+            block = env.viz_grid[r*ratio_y:(r+1)*ratio_y, c*ratio_x:(c+1)*ratio_x]
+            if np.any(block == 100):
+                obstacle[r, c] = True
+    return obstacle
+
+
+def inflate_obstacles(obstacle_grid, radius=1):
+    """Dilate obstacle cells by `radius` so A* paths keep a clearance margin
+    instead of hugging wall cells (grid cells are ~0.4m, well above the 0.20m
+    LiDAR collision threshold, so hugging a wall cell readily trips it)."""
+    h, w = obstacle_grid.shape
+    inflated = obstacle_grid.copy()
+    obstacle_rc = np.argwhere(obstacle_grid)
+    for r, c in obstacle_rc:
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < h and 0 <= nc < w:
+                    inflated[nr, nc] = True
+    return inflated
+
+
+def line_of_sight_clear(obstacle_grid, start_rc, goal_rc):
+    """Sample points along the straight line between two cells; True if none
+    of them fall on an obstacle cell. Used to decide whether A* re-routing is
+    needed at all, so the common unobstructed case is untouched."""
+    h, w = obstacle_grid.shape
+    r0, c0 = start_rc
+    r1, c1 = goal_rc
+    n = max(abs(r1 - r0), abs(c1 - c0), 1) * 2
+    for i in range(n + 1):
+        t = i / n
+        r = int(round(r0 + (r1 - r0) * t))
+        c = int(round(c0 + (c1 - c0) * t))
+        r = min(max(r, 0), h - 1)
+        c = min(max(c, 0), w - 1)
+        if obstacle_grid[r, c]:
+            return False
+    return True
+
+
+def astar_path(obstacle_grid, start_rc, goal_rc):
+    """8-connected A* over the coverage grid. Returns a list of (r, c) cells
+    from start to goal inclusive, or None if no path exists. Grid is small
+    (~800 cells) so this is cheap enough to run fresh every step per agent."""
+    h, w = obstacle_grid.shape
+    if obstacle_grid[goal_rc[0], goal_rc[1]]:
+        return None
+
+    def heuristic(a, b):
+        return math.hypot(a[0]-b[0], a[1]-b[1])
+
+    neighbors = [(-1,0,1.0),(1,0,1.0),(0,-1,1.0),(0,1,1.0),
+                 (-1,-1,1.41421356),(-1,1,1.41421356),(1,-1,1.41421356),(1,1,1.41421356)]
+    open_set = [(heuristic(start_rc, goal_rc), 0.0, start_rc)]
+    came_from = {}
+    g_score = {start_rc: 0.0}
+    visited = set()
+
+    while open_set:
+        _, g, current = heapq.heappop(open_set)
+        if current == goal_rc:
+            path = [current]
+            while current in came_from:
+                current = came_from[current]
+                path.append(current)
+            path.reverse()
+            return path
+        if current in visited:
+            continue
+        visited.add(current)
+        for dr, dc, cost in neighbors:
+            nr, nc = current[0]+dr, current[1]+dc
+            if not (0 <= nr < h and 0 <= nc < w) or obstacle_grid[nr, nc]:
+                continue
+            neighbor = (nr, nc)
+            tentative_g = g + cost
+            if tentative_g < g_score.get(neighbor, float('inf')):
+                g_score[neighbor] = tentative_g
+                came_from[neighbor] = current
+                heapq.heappush(open_set, (tentative_g + heuristic(neighbor, goal_rc), tentative_g, neighbor))
+    return None
+
+
+def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noise=False, inject_failure=False, verbose=False):
     obs_dict, infos = env.reset()
     active_agents = env.possible_agents[:]
     
@@ -26,6 +124,9 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     
     # Cell occupancy overlap counts
     cell_visit_counts = np.zeros((env.grid_resolution_y, env.grid_resolution_x))
+
+    # Collision tracking: count unique agent-steps flagged FAILED (lidar/inter-agent)
+    collision_count = 0
     
     # Pick a random agent to fail if failure injection is enabled
     failed_agent = 'tb2'
@@ -37,10 +138,18 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     active = True
     while active and steps < env.max_steps:
         actions = {}
-        
+
         # Reset claims for the current step
         step_claims = set()
-        
+
+        # Shared obstacle grid for this step (used by 'heuristic' mode's A* routing).
+        # Computed once here rather than per-agent/per-candidate.
+        obstacle_grid = build_obstacle_grid(env) if mode == 'heuristic' else None
+        # Inflated copy for path planning only, so routes keep a clearance margin
+        # from walls (frontier target *selection* still uses the raw, uninflated
+        # grid so legitimately-reachable floor cells near a wall stay valid targets).
+        planning_grid = inflate_obstacles(obstacle_grid, radius=1) if mode == 'heuristic' else None
+
         # 1. Action Selection based on Mode
         for agent in env.agents:
             # Handle failed agent
@@ -52,36 +161,33 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 actions[agent] = env.action_space(agent).sample()
                 
             elif mode == 'heuristic':
-                # Frontier-exploration: Target closest unvisited grid cell
+                # Frontier-exploration: target the closest unvisited grid cell
+                # (selection unchanged from the original heuristic, kept stable so
+                # the target doesn't hop between candidates frame-to-frame). A* is
+                # used only to STEER toward that same target: when a direct line is
+                # blocked but a route around the obstacle exists, follow the route's
+                # next waypoint instead of stalling against the wall in a straight
+                # line. If no path exists, falls back to the original straight-line
+                # behavior (no worse than before).
                 state = env.last_poses[agent]  # x, y, yaw
                 min_x, max_x, min_y, max_y = env.grid_bounds
-                
-                # Find unvisited cells
+
+                def world_to_cell(x, y):
+                    c = int(np.clip((x - min_x) / (max_x - min_x) * env.grid_resolution_x, 0, env.grid_resolution_x - 1))
+                    r = int(np.clip((y - min_y) / (max_y - min_y) * env.grid_resolution_y, 0, env.grid_resolution_y - 1))
+                    return (r, c)
+
+                agent_cell = world_to_cell(state[0], state[1])
+
+                # Find unvisited, obstacle-free cells (same as original heuristic)
                 unvisited_coords = []
                 for r in range(env.grid_resolution_y):
                     for c in range(env.grid_resolution_x):
-                        if not env.visited_grid[r, c]:
-                            # Skip if this cell is occupied by a known wall in the high-res map
-                            is_obstacle = False
-                            ratio_x = env.viz_resolution_x // env.grid_resolution_x
-                            ratio_y = env.viz_resolution_y // env.grid_resolution_y
-                            start_r = r * ratio_y
-                            start_c = c * ratio_x
-                            for dr in range(ratio_y):
-                                for dc in range(ratio_x):
-                                    if env.viz_grid[start_r + dr, start_c + dc] == 100:
-                                        is_obstacle = True
-                                        break
-                                if is_obstacle:
-                                    break
-                            if is_obstacle:
-                                continue
-                                
-                            # Map row/col back to global x, y
+                        if not env.visited_grid[r, c] and not obstacle_grid[r, c]:
                             cx = min_x + (c + 0.5) * (max_x - min_x) / env.grid_resolution_x
                             cy = min_y + (r + 0.5) * (max_y - min_y) / env.grid_resolution_y
                             unvisited_coords.append((cx, cy))
-                            
+
                 if len(unvisited_coords) > 0:
                     # Filter coordinates to pick ones not claimed in this step
                     dists = []
@@ -91,7 +197,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                         if coord_key not in step_claims:
                             dists.append(math.hypot(cx - state[0], cy - state[1]))
                             valid_coords.append((cx, cy))
-                            
+
                     if len(valid_coords) == 0:
                         # Fallback if all remaining unvisited cells are already claimed
                         dists = [math.hypot(cx - state[0], cy - state[1]) for cx, cy in unvisited_coords]
@@ -101,13 +207,26 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                         closest_idx = np.argmin(dists)
                         tx, ty = valid_coords[closest_idx]
                         step_claims.add((round(tx, 2), round(ty, 2)))
-                    
-                    # Reactive Obstacle Avoidance using Lidar
+
+                    # Only re-route via A* if the direct line to the target is
+                    # actually obstructed; otherwise keep the original straight-line
+                    # steering unchanged (avoids introducing waypoint jitter in the
+                    # common unobstructed case).
+                    target_cell = world_to_cell(tx, ty)
+                    if not line_of_sight_clear(planning_grid, agent_cell, target_cell):
+                        path = astar_path(planning_grid, agent_cell, target_cell)
+                        if path is not None and len(path) > 1:
+                            wr, wc = path[1]
+                            tx = min_x + (wc + 0.5) * (max_x - min_x) / env.grid_resolution_x
+                            ty = min_y + (wr + 0.5) * (max_y - min_y) / env.grid_resolution_y
+
+                    # Reactive Obstacle Avoidance using Lidar (safety net for dynamic
+                    # obstacles/teammates not captured by the static obstacle grid)
                     agent_obs = obs_dict[agent]
                     # Beams 10, 11, 12, 13, 14 are front-facing beams
                     front_beams = agent_obs[10:15]
                     min_front_dist = np.min(front_beams)
-                    
+
                     if min_front_dist < 0.45:
                         # Obstacle very close! Back up slightly and spin away
                         linear = -0.05
@@ -123,7 +242,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                         angular = 0.5 if left_dist > right_dist else -0.5
                         actions[agent] = np.array([linear, angular], dtype=np.float32)
                     else:
-                        # Path clear! Proportional control to target cell
+                        # Path clear! Proportional control to next waypoint
                         goal_dist = math.hypot(tx - state[0], ty - state[1])
                         goal_angle = math.atan2(ty - state[1], tx - state[0]) - state[2]
                         goal_angle = math.atan2(math.sin(goal_angle), math.cos(goal_angle))
@@ -131,7 +250,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                         angular = np.clip(1.5 * goal_angle, -0.8, 0.8)
                         actions[agent] = np.array([linear, angular], dtype=np.float32)
                 else:
-                    # No unvisited cells left: perform random wander
+                    # No reachable unvisited cells left: perform random wander
                     actions[agent] = np.array([0.1, 0.0])
                     
             elif mode == 'mappo' and policy is not None:
@@ -156,6 +275,8 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         # 3. Track Metrics
         for agent in env.possible_agents:
             if agent in infos:
+                if infos[agent].get('status') == 'FAILED':
+                    collision_count += 1
                 cx, cy = infos[agent]['x'], infos[agent]['y']
                 
                 # Accumulate distance
@@ -175,7 +296,11 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         steps += 1
         if len(env.agents) == 0:
             active = False
-            
+
+        if verbose and steps % 50 == 0:
+            live_acr = (np.sum(env.visited_grid) / total_cells) * 100.0
+            print(f"    Step {steps:4d}/{env.max_steps} | Coverage: {live_acr:5.1f}% | Active robots: {len(env.agents)}")
+
     # Calculate final results
     final_visited = np.sum(env.visited_grid)
     acr = (final_visited / total_cells) * 100.0
@@ -191,20 +316,63 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         'acr': acr,
         'steps': steps,
         'redundancy': redundancy,
-        'distance': total_distance
+        'distance': total_distance,
+        'collisions': collision_count
     }
+
+def run_coverage_demo(gui=True, max_steps=1200):
+    """
+    Maximize area coverage using the Frontier Heuristic (no training required)
+    with continuous_exploration=True so agents keep pursuing new frontier cells
+    instead of terminating on their initial random goal. Runs with Gazebo GUI +
+    RViz by default so coverage can be watched live.
+    """
+    print("\n" + "="*50)
+    print("      MARS SWARM 100% COVERAGE DEMO (Frontier Heuristic)      ")
+    print("="*50 + "\n")
+
+    start_gazebo(headless=not gui)
+
+    print("[coverage-demo] Initializing Swarm Environment...")
+    env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True)
+
+    print(f"[coverage-demo] Running single {max_steps}-step episode with dynamic frontier targeting...")
+    res = run_benchmark_episode(env, mode='heuristic', verbose=True)
+
+    env.close()
+    if gazebo_process:
+        print("[coverage-demo] Stopping Gazebo...")
+        try:
+            os.killpg(os.getpgid(gazebo_process.pid), signal.SIGTERM)
+            gazebo_process.wait(timeout=3)
+        except Exception:
+            pass
+    kill_stale_processes()
+
+    print("\n" + "="*50)
+    print(f"FINAL COVERAGE: {res['acr']:.1f}%  | Steps: {res['steps']} | "
+          f"Redundancy: {res['redundancy']:.2f} | Distance: {res['distance']:.2f}m | "
+          f"Collisions: {res['collisions']}")
+    print("="*50 + "\n")
 
 def main():
     parser = argparse.ArgumentParser(description="MARS Swarm Quantitative Benchmarking Suite")
     parser.add_argument('--checkpoint', type=str, default="", help="Path to checkpoint directory for MAPPO policy")
     parser.add_argument('--episodes', type=int, default=5, help="Number of evaluation episodes per configuration")
     parser.add_argument('--gui', action='store_true', help="Run with Gazebo GUI enabled")
+    parser.add_argument('--coverage-demo', action='store_true', help="Run a single long Frontier Heuristic episode to maximize area coverage (GUI+RViz by default)")
+    parser.add_argument('--max-steps', type=int, default=1200, help="Max steps for --coverage-demo")
+    parser.add_argument('--headless', action='store_true', help="Force headless for --coverage-demo (default is GUI)")
     args = parser.parse_args()
-    
+
+    if args.coverage_demo:
+        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps)
+        return
+
     print("\n" + "="*50)
     print("      MARS SWARM QUANTITATIVE BENCHMARKING SUITE      ")
     print("="*50 + "\n")
-    
+
     # 1. Initialize Ray if MAPPO is requested
     policy = None
     if args.checkpoint:
@@ -253,7 +421,7 @@ def main():
             {'name': 'MAPPO (Agent Failure)', 'mode': 'mappo', 'noise': False, 'failure': True},
         ])
         
-    results_data = {scen['name']: {'acr': [], 'redundancy': [], 'distance': []} for scen in scenarios}
+    results_data = {scen['name']: {'acr': [], 'redundancy': [], 'distance': [], 'collisions': []} for scen in scenarios}
     
     for scen in scenarios:
         name = scen['name']
@@ -269,7 +437,8 @@ def main():
             results_data[name]['acr'].append(res['acr'])
             results_data[name]['redundancy'].append(res['redundancy'])
             results_data[name]['distance'].append(res['distance'])
-            print(f"  Episode {ep:2d} | ACR: {res['acr']:5.1f}% | Redundancy: {res['redundancy']:.2f} | Distance: {res['distance']:.2f}m")
+            results_data[name]['collisions'].append(res['collisions'])
+            print(f"  Episode {ep:2d} | ACR: {res['acr']:5.1f}% | Redundancy: {res['redundancy']:.2f} | Distance: {res['distance']:.2f}m | Collisions: {res['collisions']}")
             
     env.close()
     if gazebo_process:
@@ -290,7 +459,8 @@ def main():
         std_acr = np.std(metrics['acr'])
         mean_red = np.mean(metrics['redundancy'])
         mean_dist = np.mean(metrics['distance'])
-        print(f"{name:25s} | ACR: {mean_acr:5.1f} ± {std_acr:3.1f}% | Overlap Redundancy: {mean_red:4.2f} | Energy: {mean_dist:5.1f}m")
+        mean_coll = np.mean(metrics['collisions'])
+        print(f"{name:25s} | ACR: {mean_acr:5.1f} ± {std_acr:3.1f}% | Overlap Redundancy: {mean_red:4.2f} | Energy: {mean_dist:5.1f}m | Collisions: {mean_coll:4.2f}")
         
     # Generate Box-and-Whisker Plots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
