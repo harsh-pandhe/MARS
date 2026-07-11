@@ -136,16 +136,17 @@ class SwarmNode(Node):
 class PettingZooSwarmEnv(ParallelEnv):
     metadata = {'render_modes': ['human'], "name": "mars_swarm_v0"}
 
-    def __init__(self, agents=['tb1', 'tb2', 'tb3'], max_steps=300, continuous_exploration=False):
+    def __init__(self, agents=['tb1', 'tb2', 'tb3'], max_steps=300, continuous_exploration=False, world='cafe'):
         super().__init__()
         self.agents = agents
         self.possible_agents = agents[:]
         self.max_steps = max_steps
         self.continuous_exploration = continuous_exploration
+        self.world = world
         self.step_count = 0
-        
+
         self.num_lidar_beams = 24
-        
+
         # 24 (lidar) + 2 (goal rel) + 2 (vel) + 18 (9 neighbors * 2) = 46
         self.observation_spaces = {
             agent: gym.spaces.Box(low=-np.inf, high=np.inf, shape=(46,), dtype=np.float32)
@@ -155,26 +156,55 @@ class PettingZooSwarmEnv(ParallelEnv):
             agent: gym.spaces.Box(low=np.array([-0.22, -1.0]), high=np.array([0.22, 1.0]), dtype=np.float32)
             for agent in agents
         }
-        
-        self.safe_goals_world = [
-            (-3.5, -8.0), (2.5, -8.0),
-            (-3.5, -3.0), (0.0, -3.0), (2.5, -3.0),
-            (-3.5, 2.0), (0.0, 2.0), (2.5, 2.0),
-            (-2.0, 6.0), (0.0, 6.0), (2.0, 6.0)
-        ]
-        self.safe_goals = []
-        for gx, gy in self.safe_goals_world:
-            gx_local = -gy - 0.7113
-            gy_local = gx
-            self.safe_goals.append((gx_local, gy_local))
-            
+
+        if world == 'warehouse':
+            # Case-study world: 12x12m region centered at the origin, verified via
+            # offline mesh analysis to be 0% occupied at LiDAR height (see
+            # worlds/warehouse.sdf). tb1 spawns at world (0,0) with the same yaw
+            # (-1.5708) as the cafe world, so the local<->world rotation is
+            # identical; unlike cafe, the warehouse model is centered at the world
+            # origin, so no extra translation offset is needed.
+            self.safe_goals_world = [
+                (-4.0, -4.0), (0.0, -4.0), (4.0, -4.0),
+                (-4.0, 0.0), (4.0, 0.0),
+                (-4.0, 4.0), (0.0, 4.0), (4.0, 4.0),
+            ]
+            self.safe_goals = []
+            for gx, gy in self.safe_goals_world:
+                gx_local = -gy
+                gy_local = gx
+                self.safe_goals.append((gx_local, gy_local))
+            # Grid parameters for area coverage (in tb1/odom frame), slightly inside
+            # the verified 12x12m clear zone to leave a margin for robot footprint.
+            self.grid_bounds = (-5.5, 5.5, -5.5, 5.5)
+            # 28x28 keeps cell size (~0.39m) comparable to the cafe grid (~0.425m).
+            # Reusing cafe's fixed 40x20 here would make cells ~0.275m wide, smaller
+            # than the heuristic's 0.2m "close enough" stopping tolerance -> the
+            # robot can halt near a target cell's center without ever crossing into
+            # it, so it's never marked visited and gets re-picked forever (verified:
+            # this exact deadlock froze all 3 robots at ~3-18% coverage headless).
+            self.grid_resolution_x = 28
+            self.grid_resolution_y = 28
+        else:
+            self.safe_goals_world = [
+                (-3.5, -8.0), (2.5, -8.0),
+                (-3.5, -3.0), (0.0, -3.0), (2.5, -3.0),
+                (-3.5, 2.0), (0.0, 2.0), (2.5, 2.0),
+                (-2.0, 6.0), (0.0, 6.0), (2.0, 6.0)
+            ]
+            self.safe_goals = []
+            for gx, gy in self.safe_goals_world:
+                gx_local = -gy - 0.7113
+                gy_local = gx
+                self.safe_goals.append((gx_local, gy_local))
+            # Grid parameters for area coverage (in tb1/odom frame: x_local in [-7.7113, 9.2887], y_local in [-4.5, 3.5])
+            self.grid_bounds = (-7.7113, 9.2887, -4.5, 3.5)
+            self.grid_resolution_x = 40
+            self.grid_resolution_y = 20
+
         self.goal_positions = {agent: np.zeros(2, dtype=np.float32) for agent in agents}
         self.prev_goal_dists = {agent: 10.0 for agent in agents}
-        
-        # Grid parameters for area coverage (in tb1/odom frame: x_local in [-7.7113, 9.2887], y_local in [-4.5, 3.5])
-        self.grid_bounds = (-7.7113, 9.2887, -4.5, 3.5)
-        self.grid_resolution_x = 40
-        self.grid_resolution_y = 20
+
         self.visited_grid = np.zeros((self.grid_resolution_y, self.grid_resolution_x), dtype=bool)
         self.local_visited_grids = {
             agent: np.zeros((self.grid_resolution_y, self.grid_resolution_x), dtype=bool)

@@ -1,0 +1,70 @@
+<?xml version="1.0" ?>
+<!--
+  "Warehouse" case-study world. Interior floor is verified genuinely open:
+  30x50m footprint, only outer boundary walls + a handful of small support
+  pillars at floor level (0.9% occupied over a 320 sqm sample, 0.0% occupied
+  in the 12x12m region centered at the origin used for the coverage demo).
+  Contrast with worlds/cafe.sdf, whose furniture makes ~10% of its coverage
+  grid physically unreachable regardless of navigation quality.
+
+  Model: "Warehouse" by OpenRobotics, via Gazebo Fuel
+  (https://app.gazebosim.org/openrobotics/fuel/models/Warehouse),
+  licensed CC BY-NC-ND 4.0 (non-commercial, no derivatives; included as-is,
+  unmodified).
+-->
+<sdf version="1.6">
+  <world name="default">
+    <plugin
+      filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin
+      filename="gz-sim-imu-system"
+      name="gz::sim::systems::Imu">
+    </plugin>
+
+    <light name='sun' type='directional'>
+        <cast_shadows>1</cast_shadows>
+        <pose>0 0 10 0 0 0</pose>
+        <diffuse>0.8 0.8 0.8 1</diffuse>
+        <specular>0.8 0.8 0.8 1</specular>
+        <attenuation>
+            <range>1000</range>
+            <constant>0.9</constant>
+            <linear>0.01</linear>
+            <quadratic>0.001</quadratic>
+        </attenuation>
+        <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <scene>
+      <shadows>1</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <physics name='3ms' type='ode'>
+        <max_step_size>0.003</max_step_size>
+        <real_time_factor>1</real_time_factor>
+    </physics>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/Warehouse</uri>
+      <name>warehouse</name>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+
+  </world>
+</sdf>

@@ -320,21 +320,26 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         'collisions': collision_count
     }
 
-def run_coverage_demo(gui=True, max_steps=1200):
+def run_coverage_demo(gui=True, max_steps=1200, world='cafe'):
     """
     Maximize area coverage using the Frontier Heuristic (no training required)
     with continuous_exploration=True so agents keep pursuing new frontier cells
     instead of terminating on their initial random goal. Runs with Gazebo GUI +
     RViz by default so coverage can be watched live.
+
+    world='cafe' (default): furnished cafe, realistic obstacle course, plateaus
+    around ~90% since some grid cells are physically inside furniture.
+    world='warehouse': verified obstacle-free 12x12m region of a real Gazebo
+    Fuel model, case study for genuinely-achievable ~100% coverage.
     """
     print("\n" + "="*50)
-    print("      MARS SWARM 100% COVERAGE DEMO (Frontier Heuristic)      ")
+    print(f"      MARS SWARM COVERAGE DEMO (Frontier Heuristic, world={world})      ")
     print("="*50 + "\n")
 
-    start_gazebo(headless=not gui)
+    start_gazebo(headless=not gui, world=world)
 
     print("[coverage-demo] Initializing Swarm Environment...")
-    env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True)
+    env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True, world=world)
 
     print(f"[coverage-demo] Running single {max_steps}-step episode with dynamic frontier targeting...")
     res = run_benchmark_episode(env, mode='heuristic', verbose=True)
@@ -363,10 +368,11 @@ def main():
     parser.add_argument('--coverage-demo', action='store_true', help="Run a single long Frontier Heuristic episode to maximize area coverage (GUI+RViz by default)")
     parser.add_argument('--max-steps', type=int, default=1200, help="Max steps for --coverage-demo")
     parser.add_argument('--headless', action='store_true', help="Force headless for --coverage-demo (default is GUI)")
+    parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse'], help="World for --coverage-demo: 'cafe' (furnished, ~90%% ceiling) or 'warehouse' (verified obstacle-free case study, ~100%% ceiling)")
     args = parser.parse_args()
 
     if args.coverage_demo:
-        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps)
+        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world)
         return
 
     print("\n" + "="*50)

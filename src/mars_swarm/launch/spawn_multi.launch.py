@@ -14,10 +14,13 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 def launch_setup(context, *args, **kwargs):
     headless_str = context.perform_substitution(LaunchConfiguration('headless'))
     tb3_sim_share = get_package_share_directory('nav2_minimal_tb3_sim')
-    
-    # 1. Get path to the cafe world SDF file
+
+    # 1. Get path to the world SDF file (cafe: furnished, ~90% max coverage due
+    # to physically unreachable cells behind furniture. warehouse: verified
+    # obstacle-free in the 12x12m region used here, case study for ~100% coverage)
+    world_name = context.perform_substitution(LaunchConfiguration('world'))
     mars_swarm_share = get_package_share_directory('mars_swarm')
-    world_sdf_path = os.path.join(mars_swarm_share, 'worlds', 'cafe.sdf')
+    world_sdf_path = os.path.join(mars_swarm_share, 'worlds', f'{world_name}.sdf')
     
     # 2. Launch Gazebo Sim with the compiled world
     gz_sim_share = get_package_share_directory('ros_gz_sim')
@@ -223,6 +226,7 @@ def generate_launch_description():
     
     # Declare launch arguments
     ld.add_action(DeclareLaunchArgument('headless', default_value='true', description='Run Gazebo headless (no GUI)'))
+    ld.add_action(DeclareLaunchArgument('world', default_value='cafe', description="World SDF to load (without extension): 'cafe' or 'warehouse'"))
     ld.add_action(DeclareLaunchArgument('enable_static_tf', default_value='true', description='Whether to enable static TF between robot odom frames'))
     ld.add_action(DeclareLaunchArgument('multi', default_value='true', description='Whether to spawn 3 robots (true) or just 1 (false)'))
     
