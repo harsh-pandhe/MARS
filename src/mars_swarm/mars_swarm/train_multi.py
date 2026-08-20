@@ -358,20 +358,36 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     ray.init(ignore_reinit_error=True)
     
     # 2. Register Environment
+    # max_steps shortened 150->90: episode-reset overhead (~2s settle) is fixed
+    # regardless of length, so shorter episodes fit more distinct episodes into
+    # each iteration's sample budget without extra wall-clock cost.
+    TRAIN_MAX_STEPS = 90
+
     def env_creator(config_dict):
-        return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150))
-        
+        return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=TRAIN_MAX_STEPS))
+
     register_env("mars_swarm_v0", env_creator)
-    
+
     # Extract observation and action spaces from temporary env
     print("[train_multi] Fetching environment dimensions...")
     temp_env = PettingZooSwarmEnv(max_steps=10)
     obs_space = temp_env.observation_space("tb1")
     act_space = temp_env.action_space("tb1")
     temp_env.close()
-    
+
     # 3. Configure MAPPO
     # Since robots are homogeneous, we train a single shared policy
+    #
+    # lambda_/entropy_coeff were previously left at RLlib defaults (1.0 / 0.0).
+    # With train_batch_size this small (~3-4 episodes/iteration), lambda=1.0's
+    # full-Monte-Carlo advantage estimator has very high variance, and
+    # entropy_coeff=0.0 gives the policy no pressure to keep exploring -
+    # together these produced an observed entropy collapse to -0.53 by
+    # iteration 15 and wildly swinging episode returns (-227 to +3). lambda_=
+    # 0.95 trades a little bias for a large variance cut; entropy_coeff=0.01
+    # directly counters the collapse. train_batch_size raised 300->700 to get
+    # more distinct episodes per gradient step (compounds with the lower
+    # variance from lambda_=0.95).
     config = (
         PPOConfig()
         .api_stack(
@@ -382,16 +398,18 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
         .framework("torch")
         .env_runners(
             num_env_runners=0,  # Must be 0 to keep Gazebo running inside the main worker process
-            rollout_fragment_length=150,
+            rollout_fragment_length=TRAIN_MAX_STEPS,
         )
         .training(
             model={"custom_model": "cc_model"},
-            train_batch_size=300,
+            train_batch_size=700,
             minibatch_size=64,
             num_epochs=5,
             lr=1e-4,
             clip_param=0.2,
             gamma=0.99,
+            lambda_=0.95,
+            entropy_coeff=0.01,
         )
         .multi_agent(
             policies={"shared_policy": (None, obs_space, act_space, {})},
@@ -527,7 +545,7 @@ def main():
     parser.add_argument('--evaluate', action='store_true', help="Evaluate a trained MAPPO policy checkpoint")
     parser.add_argument('--checkpoint', type=str, default="", help="Path to checkpoint directory for evaluation")
     parser.add_argument('--episodes', type=int, default=5, help="Number of evaluation episodes")
-    parser.add_argument('--iterations', type=int, default=15, help="Number of training iterations")
+    parser.add_argument('--iterations', type=int, default=45, help="Number of training iterations")
     parser.add_argument('--gui', action='store_true', help="Run Gazebo with GUI enabled (not headless)")
     args = parser.parse_args()
     

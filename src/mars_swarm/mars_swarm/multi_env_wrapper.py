@@ -158,33 +158,39 @@ class PettingZooSwarmEnv(ParallelEnv):
         }
 
         if world == 'warehouse':
-            # Case-study world: 12x12m region centered at the origin, verified via
-            # offline mesh analysis to be 0% occupied at LiDAR height (see
-            # worlds/warehouse.sdf). tb1 spawns at world (0,0) with the same yaw
-            # (-1.5708) as the cafe world, so the local<->world rotation is
-            # identical; unlike cafe, the warehouse model is centered at the world
-            # origin, so no extra translation offset is needed.
+            # Case-study world: 18x12m region centered at the origin, verified via
+            # offline STL mesh analysis of the real Fuel-hosted Warehouse model
+            # (see worlds/warehouse.sdf). Deliberately includes 2 real pillars at
+            # world x ~= +/-7.25m, y ~= 0m (the nearest pair of a 2x3 pillar grid
+            # found by clustering obstacle-triangle centroids at LiDAR height) so
+            # the demo shows genuine LiDAR obstacle discovery + A*-routed avoidance
+            # (evaluate_benchmarks.py's line-of-sight-gated A* already applies
+            # generically to any world via env.viz_grid), not an artificially empty
+            # room. tb1 spawns at world (0,0) with the same yaw (-1.5708) as the
+            # cafe world, so the local<->world rotation is identical; unlike cafe,
+            # the warehouse model is centered at the world origin, so no extra
+            # translation offset is needed.
             self.safe_goals_world = [
-                (-4.0, -4.0), (0.0, -4.0), (4.0, -4.0),
-                (-4.0, 0.0), (4.0, 0.0),
-                (-4.0, 4.0), (0.0, 4.0), (4.0, 4.0),
+                (-6.0, -4.0), (0.0, -4.0), (6.0, -4.0),
+                (-6.0, 0.0), (6.0, 0.0),
+                (-6.0, 4.0), (0.0, 4.0), (6.0, 4.0),
             ]
             self.safe_goals = []
             for gx, gy in self.safe_goals_world:
                 gx_local = -gy
                 gy_local = gx
                 self.safe_goals.append((gx_local, gy_local))
-            # Grid parameters for area coverage (in tb1/odom frame), slightly inside
-            # the verified 12x12m clear zone to leave a margin for robot footprint.
-            self.grid_bounds = (-5.5, 5.5, -5.5, 5.5)
-            # 28x28 keeps cell size (~0.39m) comparable to the cafe grid (~0.425m).
-            # Reusing cafe's fixed 40x20 here would make cells ~0.275m wide, smaller
-            # than the heuristic's 0.2m "close enough" stopping tolerance -> the
-            # robot can halt near a target cell's center without ever crossing into
-            # it, so it's never marked visited and gets re-picked forever (verified:
-            # this exact deadlock froze all 3 robots at ~3-18% coverage headless).
-            self.grid_resolution_x = 28
-            self.grid_resolution_y = 28
+            # Grid parameters for area coverage (in tb1/odom frame).
+            self.grid_bounds = (-9.0, 9.0, -6.0, 6.0)
+            # 45x30 keeps cell size at 0.4m x 0.4m (18/45, 12/30) - comparable to
+            # the cafe grid (~0.425m) and well above the heuristic's 0.2m "close
+            # enough" stopping tolerance (a fixed resolution reused across
+            # differently-sized worlds previously produced cells smaller than that
+            # tolerance and froze the swarm permanently - see git history). Also
+            # divides evenly into viz_resolution at map_resolution=0.1m (180/45=4,
+            # 120/30=4 exactly), avoiding ratio-truncation in build_obstacle_grid.
+            self.grid_resolution_x = 45
+            self.grid_resolution_y = 30
         else:
             self.safe_goals_world = [
                 (-3.5, -8.0), (2.5, -8.0),
@@ -734,7 +740,10 @@ class PettingZooSwarmEnv(ParallelEnv):
             x, y, _ = state_dict[agent]
             if self._mark_visited(agent, x, y):
                 new_cells_visited += 1
-        coverage_reward = float(new_cells_visited) * 2.0
+        # Weight raised 2.0->4.0: coverage-rate is the actual benchmarked metric,
+        # but was a small term next to the +-20 goal/collision spikes, giving MAPPO
+        # little gradient signal toward the behavior we evaluate it on.
+        coverage_reward = float(new_cells_visited) * 4.0
         
         self.publish_coverage_map()
         
@@ -780,7 +789,11 @@ class PettingZooSwarmEnv(ParallelEnv):
                     print(f"[{agent}] Goal reached! Dynamically assigned new goal: {self.goal_positions[agent]}")
                     
             if collision:
-                reward -= 20.0
+                # Softened -20.0->-8.0: at -20 a single collision could swamp the
+                # whole advantage estimate for a short (~90-150 step) episode,
+                # dominating over the coverage/progress signal MAPPO needs to learn
+                # from. Still a clear negative signal, just not overwhelming.
+                reward -= 8.0
                 
             # Inter-agent proximity penalties
             x, y, _ = state_dict[agent]
