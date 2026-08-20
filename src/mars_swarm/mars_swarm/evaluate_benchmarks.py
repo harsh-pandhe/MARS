@@ -305,13 +305,18 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
             # total_cells figure early on and only diverges once real walls/
             # pillars are found - it does not inflate the score, it just stops
             # penalizing the swarm for floor space that was never coverable.
-            known_obstacles = build_obstacle_grid(env).sum() if mode == 'heuristic' else 0
+            # env.viz_grid is populated every step regardless of mode (random/
+            # heuristic/mappo alike), so this must apply uniformly across all
+            # methods - gating it to one mode would score that mode against a
+            # smaller, more generous denominator than the others in the same
+            # comparison table.
+            known_obstacles = build_obstacle_grid(env).sum()
             live_acr = (np.sum(env.visited_grid) / max(1, total_cells - known_obstacles)) * 100.0
             print(f"    Step {steps:4d}/{env.max_steps} | Coverage: {live_acr:5.1f}% | Active robots: {len(env.agents)}")
 
     # Calculate final results
     final_visited = np.sum(env.visited_grid)
-    final_known_obstacles = build_obstacle_grid(env).sum() if mode == 'heuristic' else 0
+    final_known_obstacles = build_obstacle_grid(env).sum()
     acr = (final_visited / max(1, total_cells - final_known_obstacles)) * 100.0
     
     # Calculate overlap redundancy: average visits per visited cell (excluding zero visits)
