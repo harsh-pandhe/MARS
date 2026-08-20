@@ -298,12 +298,21 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
             active = False
 
         if verbose and steps % 50 == 0:
-            live_acr = (np.sum(env.visited_grid) / total_cells) * 100.0
+            # Reachable-area ACR: exclude cells discovered to be obstacles from
+            # the denominator, since they can never be marked visited regardless
+            # of navigation quality. On a large, only-partially-explored map most
+            # obstacles aren't discovered yet, so this stays close to the raw
+            # total_cells figure early on and only diverges once real walls/
+            # pillars are found - it does not inflate the score, it just stops
+            # penalizing the swarm for floor space that was never coverable.
+            known_obstacles = build_obstacle_grid(env).sum() if mode == 'heuristic' else 0
+            live_acr = (np.sum(env.visited_grid) / max(1, total_cells - known_obstacles)) * 100.0
             print(f"    Step {steps:4d}/{env.max_steps} | Coverage: {live_acr:5.1f}% | Active robots: {len(env.agents)}")
 
     # Calculate final results
     final_visited = np.sum(env.visited_grid)
-    acr = (final_visited / total_cells) * 100.0
+    final_known_obstacles = build_obstacle_grid(env).sum() if mode == 'heuristic' else 0
+    acr = (final_visited / max(1, total_cells - final_known_obstacles)) * 100.0
     
     # Calculate overlap redundancy: average visits per visited cell (excluding zero visits)
     visited_mask = cell_visit_counts > 0

@@ -158,22 +158,23 @@ class PettingZooSwarmEnv(ParallelEnv):
         }
 
         if world == 'warehouse':
-            # Case-study world: 18x12m region centered at the origin, verified via
-            # offline STL mesh analysis of the real Fuel-hosted Warehouse model
-            # (see worlds/warehouse.sdf). Deliberately includes 2 real pillars at
-            # world x ~= +/-7.25m, y ~= 0m (the nearest pair of a 2x3 pillar grid
-            # found by clustering obstacle-triangle centroids at LiDAR height) so
-            # the demo shows genuine LiDAR obstacle discovery + A*-routed avoidance
-            # (evaluate_benchmarks.py's line-of-sight-gated A* already applies
-            # generically to any world via env.viz_grid), not an artificially empty
-            # room. tb1 spawns at world (0,0) with the same yaw (-1.5708) as the
-            # cafe world, so the local<->world rotation is identical; unlike cafe,
-            # the warehouse model is centered at the world origin, so no extra
+            # Full building envelope, verified via offline STL mesh analysis of
+            # the real Fuel-hosted Warehouse model (see worlds/warehouse.sdf):
+            # 30x50m overall footprint, centered at the world origin, containing
+            # 6 real support pillars in a 2x3 grid at world x ~= +/-7.25m,
+            # y ~= {-7.75, 0, +7.75}. Robots discover the building's actual
+            # obstacle layout live via LiDAR ray-casting (publish_coverage_map) -
+            # this rectangle is only the array's fixed extent for indexing, not a
+            # pre-mapped shape; what's free vs. occupied within it is found
+            # autonomously, same as the smaller 18x12m zone used previously.
+            # tb1 spawns at world (0,0) with the same yaw (-1.5708) as the cafe
+            # world, so the local<->world rotation is identical; unlike cafe, the
+            # warehouse model is centered at the world origin, so no extra
             # translation offset is needed.
             self.safe_goals_world = [
-                (-6.0, -4.0), (0.0, -4.0), (6.0, -4.0),
-                (-6.0, 0.0), (6.0, 0.0),
-                (-6.0, 4.0), (0.0, 4.0), (6.0, 4.0),
+                (x, y)
+                for x in (-12.0, -4.0, 4.0, 12.0)
+                for y in (-20.0, -10.0, 0.0, 10.0, 20.0)
             ]
             self.safe_goals = []
             for gx, gy in self.safe_goals_world:
@@ -181,16 +182,16 @@ class PettingZooSwarmEnv(ParallelEnv):
                 gy_local = gx
                 self.safe_goals.append((gx_local, gy_local))
             # Grid parameters for area coverage (in tb1/odom frame).
-            self.grid_bounds = (-9.0, 9.0, -6.0, 6.0)
-            # 45x30 keeps cell size at 0.4m x 0.4m (18/45, 12/30) - comparable to
-            # the cafe grid (~0.425m) and well above the heuristic's 0.2m "close
-            # enough" stopping tolerance (a fixed resolution reused across
+            self.grid_bounds = (-15.0, 15.0, -25.0, 25.0)
+            # 75x125 keeps cell size at 0.4m x 0.4m (30/75, 50/125) - comparable
+            # to the cafe grid (~0.425m) and well above the heuristic's 0.2m
+            # "close enough" stopping tolerance (a fixed resolution reused across
             # differently-sized worlds previously produced cells smaller than that
             # tolerance and froze the swarm permanently - see git history). Also
-            # divides evenly into viz_resolution at map_resolution=0.1m (180/45=4,
-            # 120/30=4 exactly), avoiding ratio-truncation in build_obstacle_grid.
-            self.grid_resolution_x = 45
-            self.grid_resolution_y = 30
+            # divides evenly into viz_resolution at map_resolution=0.1m (300/75=4,
+            # 500/125=4 exactly), avoiding ratio-truncation in build_obstacle_grid.
+            self.grid_resolution_x = 75
+            self.grid_resolution_y = 125
         else:
             self.safe_goals_world = [
                 (-3.5, -8.0), (2.5, -8.0),
