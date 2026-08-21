@@ -134,7 +134,20 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     
     # We track claimed targets in this step to avoid greedy multi-agent target deadlocks
     claimed_targets = set()
-    
+
+    # Reachability memory for 'heuristic' mode: frontier selection alone has no
+    # concept of "unreachable" (only "unvisited" / "not yet discovered as
+    # obstacle"), so a target cell that's flush against a wall the robot's own
+    # SLAM-like grid hasn't registered from its approach angle gets re-picked
+    # forever - the robot walks into the same wall every step. Track how long
+    # each agent has been chasing the same target cell without closing the
+    # distance; after too long, blacklist that cell from selection so the
+    # agent moves on to a genuinely reachable frontier instead of stalling.
+    STUCK_STEPS_THRESHOLD = 25
+    STUCK_PROGRESS_EPS = 0.05  # meters closer required per STUCK window to not count as stuck
+    agent_target_state = {agent: {'cell': None, 'best_dist': None, 'stuck_steps': 0} for agent in env.possible_agents}
+    blacklisted_target_cells = set()
+
     active = True
     while active and steps < env.max_steps:
         actions = {}
@@ -179,11 +192,12 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
 
                 agent_cell = world_to_cell(state[0], state[1])
 
-                # Find unvisited, obstacle-free cells (same as original heuristic)
+                # Find unvisited, obstacle-free cells (same as original heuristic),
+                # excluding cells blacklisted as unreachable (see stuck-tracking below)
                 unvisited_coords = []
                 for r in range(env.grid_resolution_y):
                     for c in range(env.grid_resolution_x):
-                        if not env.visited_grid[r, c] and not obstacle_grid[r, c]:
+                        if not env.visited_grid[r, c] and not obstacle_grid[r, c] and (r, c) not in blacklisted_target_cells:
                             cx = min_x + (c + 0.5) * (max_x - min_x) / env.grid_resolution_x
                             cy = min_y + (r + 0.5) * (max_y - min_y) / env.grid_resolution_y
                             unvisited_coords.append((cx, cy))
@@ -219,6 +233,30 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                             wr, wc = path[1]
                             tx = min_x + (wc + 0.5) * (max_x - min_x) / env.grid_resolution_x
                             ty = min_y + (wr + 0.5) * (max_y - min_y) / env.grid_resolution_y
+
+                    # Stuck-target tracking: if this agent has been chasing the
+                    # SAME frontier target cell without meaningfully closing the
+                    # distance for STUCK_STEPS_THRESHOLD steps, it's unreachable
+                    # from here (wall/pillar the local obstacle grid hasn't
+                    # registered) - blacklist it so selection moves on.
+                    dist_to_target = math.hypot(tx - state[0], ty - state[1])
+                    tstate = agent_target_state[agent]
+                    if tstate['cell'] == target_cell:
+                        if tstate['best_dist'] is None or dist_to_target < tstate['best_dist'] - STUCK_PROGRESS_EPS:
+                            tstate['best_dist'] = dist_to_target
+                            tstate['stuck_steps'] = 0
+                        else:
+                            tstate['stuck_steps'] += 1
+                    else:
+                        tstate['cell'] = target_cell
+                        tstate['best_dist'] = dist_to_target
+                        tstate['stuck_steps'] = 0
+
+                    if tstate['stuck_steps'] >= STUCK_STEPS_THRESHOLD:
+                        blacklisted_target_cells.add(target_cell)
+                        tstate['cell'] = None
+                        tstate['best_dist'] = None
+                        tstate['stuck_steps'] = 0
 
                     # Reactive Obstacle Avoidance using Lidar (safety net for dynamic
                     # obstacles/teammates not captured by the static obstacle grid)
