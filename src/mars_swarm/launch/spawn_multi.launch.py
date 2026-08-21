@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import subprocess
 from pathlib import Path
@@ -10,6 +11,43 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction, AppendEnvironm
 from launch.substitutions import LaunchConfiguration, Command, FindExecutable
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+_GUI_CONFIG_HEADER = """<?xml version="1.0"?>
+<dialog name="quick_start" show_again="true"/>
+<window>
+  <width>1000</width>
+  <height>845</height>
+  <menus>
+    <drawer default="false">
+    </drawer>
+  </menus>
+  <dialog_on_exit>true</dialog_on_exit>
+</window>
+"""
+
+
+def _build_gui_config(world_sdf_path):
+    """Extract the world's <gui>...</gui> plugin list and wrap it in a
+    standalone gui-config file (dialog/window header + plugins, no <gui>
+    wrapper), since that's the format gz-sim's --gui-config flag expects."""
+    try:
+        with open(world_sdf_path, 'r') as f:
+            world_xml = f.read()
+    except OSError:
+        return None
+
+    match = re.search(r'<gui[^>]*>(.*)</gui>', world_xml, re.DOTALL)
+    if not match:
+        return None
+
+    gui_body = match.group(1)
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w', suffix='_gui.config', delete=False)
+    tmp.write(_GUI_CONFIG_HEADER)
+    tmp.write(gui_body)
+    tmp.close()
+    return tmp.name
+
 
 def launch_setup(context, *args, **kwargs):
     headless_str = context.perform_substitution(LaunchConfiguration('headless'))
@@ -29,7 +67,18 @@ def launch_setup(context, *args, **kwargs):
     gz_args = f'-r {world_sdf_path}'
     if headless_str.lower() == 'true':
         gz_args += ' -s'
-        
+    else:
+        # gz-sim's GUI ignores a world file's embedded <gui> block whenever
+        # ~/.gz/sim/<ver>/gui.config (or the installed default gui.config) is
+        # present -- it always wins over the world's <gui>, so our
+        # camera_pose never took effect. Work around it by extracting the
+        # world's <gui>...</gui> plugin list and building a standalone
+        # gui-config file (dialog/window header + world plugins) passed
+        # explicitly via --gui-config, which does take priority.
+        gui_config_path = _build_gui_config(world_sdf_path)
+        if gui_config_path:
+            gz_args += f' --gui-config {gui_config_path}'
+
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_sim_launch),
         launch_arguments={'gz_args': gz_args}.items()
