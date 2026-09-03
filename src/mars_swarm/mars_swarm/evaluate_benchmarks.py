@@ -13,19 +13,36 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from multi_env_wrapper import PettingZooSwarmEnv
 from train_multi import start_gazebo, kill_stale_processes, gazebo_process
 
+try:
+    from decentralized_coordinator import DecentralizedCoordinator
+except ImportError:
+    from mars_swarm.decentralized_coordinator import DecentralizedCoordinator
 
-def build_obstacle_grid(env):
-    """Downsample env.viz_grid (high-res) to the coverage grid resolution.
-    A coverage cell is an obstacle if any of its high-res sub-cells is a
-    known wall (value 100). Computed once per step and shared across agents
-    to avoid the O(cells * ratio_x * ratio_y) cost being paid per-candidate.
+try:
+    from mission_behavior_tree import SwarmMissionTree
+except ImportError:
+    from mars_swarm.mission_behavior_tree import SwarmMissionTree
+
+try:
+    from swarm_telemetry import SwarmTelemetryLogger
+except ImportError:
+    from mars_swarm.swarm_telemetry import SwarmTelemetryLogger
+
+
+
+
+def build_obstacle_grid(env, agent=None):
+    """Downsample high-res viz_grid to coverage grid resolution.
+    If agent is provided, evaluates against agent's local belief map.
     """
     ratio_x = env.viz_resolution_x // env.grid_resolution_x
     ratio_y = env.viz_resolution_y // env.grid_resolution_y
     obstacle = np.zeros((env.grid_resolution_y, env.grid_resolution_x), dtype=bool)
+    
+    grid_source = env.local_viz_grids[agent] if (agent is not None and agent in env.local_viz_grids) else env.viz_grid
     for r in range(env.grid_resolution_y):
         for c in range(env.grid_resolution_x):
-            block = env.viz_grid[r*ratio_y:(r+1)*ratio_y, c*ratio_x:(c+1)*ratio_x]
+            block = grid_source[r*ratio_y:(r+1)*ratio_y, c*ratio_x:(c+1)*ratio_x]
             if np.any(block == 100):
                 obstacle[r, c] = True
     return obstacle
@@ -109,7 +126,7 @@ def astar_path(obstacle_grid, start_rc, goal_rc):
     return None
 
 
-def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noise=False, inject_failure=False, verbose=False):
+def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noise=False, inject_failure=False, verbose=False, telemetry_logger=None):
     obs_dict, infos = env.reset()
     active_agents = env.possible_agents[:]
     
@@ -160,20 +177,11 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     # progress. This tracker watches raw position instead, so it can't be
     # fooled by target churn, and escalates to a real escape maneuver
     # (not just the tiny -0.05 m/step reactive backup) when truly wedged.
-    POSITION_STUCK_STEPS_THRESHOLD = 30
-    POSITION_STUCK_EPS = 0.05  # meters of net movement required per window to not count as stuck
-    ESCAPE_MANEUVER_STEPS = 15
-    agent_position_state = {
-        agent: {'anchor_pos': None, 'pos_stuck_steps': 0, 'escape_steps_left': 0, 'escape_angular': 0.6}
-        for agent in env.possible_agents
-    }
-
+    mission_trees = {agent: SwarmMissionTree(agent) for agent in env.possible_agents}
+    coordinator = DecentralizedCoordinator(d_comm=3.0, claim_timeout_steps=30)
     active = True
     while active and steps < env.max_steps:
         actions = {}
-
-        # Reset claims for the current step
-        step_claims = set()
 
         # Shared obstacle grid for this step (used by 'heuristic' mode's A* routing).
         # Computed once here rather than per-agent/per-candidate.
@@ -194,169 +202,27 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 actions[agent] = env.action_space(agent).sample()
                 
             elif mode == 'heuristic':
-                # Frontier-exploration: target the closest unvisited grid cell
-                # (selection unchanged from the original heuristic, kept stable so
-                # the target doesn't hop between candidates frame-to-frame). A* is
-                # used only to STEER toward that same target: when a direct line is
-                # blocked but a route around the obstacle exists, follow the route's
-                # next waypoint instead of stalling against the wall in a straight
-                # line. If no path exists, falls back to the original straight-line
-                # behavior (no worse than before).
                 state = env.last_poses[agent]  # x, y, yaw
-                min_x, max_x, min_y, max_y = env.grid_bounds
+                local_visited = env.local_visited_grids.get(agent, env.visited_grid)
+                local_obs = build_obstacle_grid(env, agent=agent)
+                local_planning_grid = inflate_obstacles(local_obs, radius=1)
 
-                # If currently running the escape maneuver from a prior stuck
-                # detection, keep executing it (bypass normal frontier logic
-                # entirely) until it completes -- a full commit to backing out
-                # and turning away, not the tiny per-step reactive nudge.
-                pstate = agent_position_state[agent]
-                if pstate['escape_steps_left'] > 0:
-                    pstate['escape_steps_left'] -= 1
-                    actions[agent] = np.array([-0.12, pstate['escape_angular']], dtype=np.float32)
-                    continue
-
-                # Position-based stuck check: independent of which frontier
-                # cell is currently selected (see comment at threshold
-                # definition above for why target-cell-based tracking alone
-                # misses this). Anchor resets whenever the agent has moved
-                # POSITION_STUCK_EPS from the anchor; otherwise stuck_steps
-                # accumulates every step regardless of target churn.
-                if pstate['anchor_pos'] is None:
-                    pstate['anchor_pos'] = (state[0], state[1])
-                    pstate['pos_stuck_steps'] = 0
-                else:
-                    moved = math.hypot(state[0] - pstate['anchor_pos'][0], state[1] - pstate['anchor_pos'][1])
-                    if moved > POSITION_STUCK_EPS:
-                        pstate['anchor_pos'] = (state[0], state[1])
-                        pstate['pos_stuck_steps'] = 0
-                    else:
-                        pstate['pos_stuck_steps'] += 1
-
-                if pstate['pos_stuck_steps'] >= POSITION_STUCK_STEPS_THRESHOLD:
-                    # Genuinely wedged (walls/pillar/teammate pocket the
-                    # reactive avoidance alone couldn't clear). Blacklist
-                    # whatever this agent is currently chasing, commit to a
-                    # real escape maneuver, and alternate escape direction
-                    # per agent so two robots stuck near each other don't
-                    # both turn into one another again.
-                    tstate = agent_target_state[agent]
-                    if tstate['cell'] is not None:
-                        blacklisted_target_cells.add(tstate['cell'])
-                    tstate['cell'] = None
-                    tstate['best_dist'] = None
-                    tstate['stuck_steps'] = 0
-                    pstate['pos_stuck_steps'] = 0
-                    pstate['anchor_pos'] = None
-                    pstate['escape_steps_left'] = ESCAPE_MANEUVER_STEPS
-                    pstate['escape_angular'] = -pstate['escape_angular']
-                    actions[agent] = np.array([-0.12, pstate['escape_angular']], dtype=np.float32)
-                    continue
-
-                def world_to_cell(x, y):
-                    c = int(np.clip((x - min_x) / (max_x - min_x) * env.grid_resolution_x, 0, env.grid_resolution_x - 1))
-                    r = int(np.clip((y - min_y) / (max_y - min_y) * env.grid_resolution_y, 0, env.grid_resolution_y - 1))
-                    return (r, c)
-
-                agent_cell = world_to_cell(state[0], state[1])
-
-                # Find unvisited, obstacle-free cells (same as original heuristic),
-                # excluding cells blacklisted as unreachable (see stuck-tracking below)
-                unvisited_coords = []
-                for r in range(env.grid_resolution_y):
-                    for c in range(env.grid_resolution_x):
-                        if not env.visited_grid[r, c] and not obstacle_grid[r, c] and (r, c) not in blacklisted_target_cells:
-                            cx = min_x + (c + 0.5) * (max_x - min_x) / env.grid_resolution_x
-                            cy = min_y + (r + 0.5) * (max_y - min_y) / env.grid_resolution_y
-                            unvisited_coords.append((cx, cy))
-
-                if len(unvisited_coords) > 0:
-                    # Filter coordinates to pick ones not claimed in this step
-                    dists = []
-                    valid_coords = []
-                    for cx, cy in unvisited_coords:
-                        coord_key = (round(cx, 2), round(cy, 2))
-                        if coord_key not in step_claims:
-                            dists.append(math.hypot(cx - state[0], cy - state[1]))
-                            valid_coords.append((cx, cy))
-
-                    if len(valid_coords) == 0:
-                        # Fallback if all remaining unvisited cells are already claimed
-                        dists = [math.hypot(cx - state[0], cy - state[1]) for cx, cy in unvisited_coords]
-                        closest_idx = np.argmin(dists)
-                        tx, ty = unvisited_coords[closest_idx]
-                    else:
-                        closest_idx = np.argmin(dists)
-                        tx, ty = valid_coords[closest_idx]
-                        step_claims.add((round(tx, 2), round(ty, 2)))
-
-                    # Only re-route via A* if the direct line to the target is
-                    # actually obstructed; otherwise keep the original straight-line
-                    # steering unchanged (avoids introducing waypoint jitter in the
-                    # common unobstructed case).
-                    target_cell = world_to_cell(tx, ty)
-                    if not line_of_sight_clear(planning_grid, agent_cell, target_cell):
-                        path = astar_path(planning_grid, agent_cell, target_cell)
-                        if path is not None and len(path) > 1:
-                            wr, wc = path[1]
-                            tx = min_x + (wc + 0.5) * (max_x - min_x) / env.grid_resolution_x
-                            ty = min_y + (wr + 0.5) * (max_y - min_y) / env.grid_resolution_y
-
-                    # Stuck-target tracking: if this agent has been chasing the
-                    # SAME frontier target cell without meaningfully closing the
-                    # distance for STUCK_STEPS_THRESHOLD steps, it's unreachable
-                    # from here (wall/pillar the local obstacle grid hasn't
-                    # registered) - blacklist it so selection moves on.
-                    dist_to_target = math.hypot(tx - state[0], ty - state[1])
-                    tstate = agent_target_state[agent]
-                    if tstate['cell'] == target_cell:
-                        if tstate['best_dist'] is None or dist_to_target < tstate['best_dist'] - STUCK_PROGRESS_EPS:
-                            tstate['best_dist'] = dist_to_target
-                            tstate['stuck_steps'] = 0
-                        else:
-                            tstate['stuck_steps'] += 1
-                    else:
-                        tstate['cell'] = target_cell
-                        tstate['best_dist'] = dist_to_target
-                        tstate['stuck_steps'] = 0
-
-                    if tstate['stuck_steps'] >= STUCK_STEPS_THRESHOLD:
-                        blacklisted_target_cells.add(target_cell)
-                        tstate['cell'] = None
-                        tstate['best_dist'] = None
-                        tstate['stuck_steps'] = 0
-
-                    # Reactive Obstacle Avoidance using Lidar (safety net for dynamic
-                    # obstacles/teammates not captured by the static obstacle grid)
-                    agent_obs = obs_dict[agent]
-                    # Beams 10, 11, 12, 13, 14 are front-facing beams
-                    front_beams = agent_obs[10:15]
-                    min_front_dist = np.min(front_beams)
-
-                    if min_front_dist < 0.45:
-                        # Obstacle very close! Back up slightly and spin away
-                        linear = -0.05
-                        left_dist = np.min(agent_obs[14:18])
-                        right_dist = np.min(agent_obs[6:10])
-                        angular = 0.6 if left_dist > right_dist else -0.6
-                        actions[agent] = np.array([linear, angular], dtype=np.float32)
-                    elif min_front_dist < 0.7:
-                        # Obstacle ahead! Slow down and steer away
-                        linear = 0.05
-                        left_dist = np.min(agent_obs[14:18])
-                        right_dist = np.min(agent_obs[6:10])
-                        angular = 0.5 if left_dist > right_dist else -0.5
-                        actions[agent] = np.array([linear, angular], dtype=np.float32)
-                    else:
-                        # Path clear! Proportional control to next waypoint
-                        goal_dist = math.hypot(tx - state[0], ty - state[1])
-                        goal_angle = math.atan2(ty - state[1], tx - state[0]) - state[2]
-                        goal_angle = math.atan2(math.sin(goal_angle), math.cos(goal_angle))
-                        linear = 0.18 if goal_dist > 0.2 else 0.0
-                        angular = np.clip(1.5 * goal_angle, -0.8, 0.8)
-                        actions[agent] = np.array([linear, angular], dtype=np.float32)
-                else:
-                    # No reachable unvisited cells left: perform random wander
-                    actions[agent] = np.array([0.1, 0.0])
+                actions[agent] = mission_trees[agent].tick(
+                    current_step=steps,
+                    agent_pose=state,
+                    agent_poses=env.last_poses,
+                    obs_dict=obs_dict,
+                    local_visited_grid=local_visited,
+                    local_obstacle_grid=local_obs,
+                    local_planning_grid=local_planning_grid,
+                    grid_bounds=env.grid_bounds,
+                    grid_res_x=env.grid_resolution_x,
+                    grid_res_y=env.grid_resolution_y,
+                    coordinator=coordinator,
+                    line_of_sight_fn=line_of_sight_clear,
+                    astar_fn=astar_path,
+                    is_continuous_exploration=getattr(env, 'continuous_exploration', True)
+                )
                     
             elif mode == 'mappo' and policy is not None:
                 agent_obs = obs_dict[agent]
@@ -402,27 +268,30 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         if len(env.agents) == 0:
             active = False
 
+        obs_grid = build_obstacle_grid(env)
+        known_obstacles = int(np.count_nonzero(obs_grid))
+        valid_visited = np.logical_and(env.visited_grid, np.logical_not(obs_grid))
+        live_acr = (np.count_nonzero(valid_visited) / max(1, total_cells - known_obstacles)) * 100.0
+
+        is_deadlock = any(getattr(mission_trees.get(a), 'escape_steps_left', 0) == 14 for a in env.agents)
+        if telemetry_logger is not None:
+            telemetry_logger.record_step(
+                step=steps,
+                acr=live_acr,
+                actions_dict=actions,
+                poses_dict=env.last_poses,
+                is_deadlock_event=is_deadlock,
+                collisions=collision_count
+            )
+
         if verbose and steps % 50 == 0:
-            # Reachable-area ACR: exclude cells discovered to be obstacles from
-            # the denominator, since they can never be marked visited regardless
-            # of navigation quality. On a large, only-partially-explored map most
-            # obstacles aren't discovered yet, so this stays close to the raw
-            # total_cells figure early on and only diverges once real walls/
-            # pillars are found - it does not inflate the score, it just stops
-            # penalizing the swarm for floor space that was never coverable.
-            # env.viz_grid is populated every step regardless of mode (random/
-            # heuristic/mappo alike), so this must apply uniformly across all
-            # methods - gating it to one mode would score that mode against a
-            # smaller, more generous denominator than the others in the same
-            # comparison table.
-            known_obstacles = build_obstacle_grid(env).sum()
-            live_acr = (np.sum(env.visited_grid) / max(1, total_cells - known_obstacles)) * 100.0
             print(f"    Step {steps:4d}/{env.max_steps} | Coverage: {live_acr:5.1f}% | Active robots: {len(env.agents)}")
 
     # Calculate final results
-    final_visited = np.sum(env.visited_grid)
-    final_known_obstacles = build_obstacle_grid(env).sum()
-    acr = (final_visited / max(1, total_cells - final_known_obstacles)) * 100.0
+    final_obs_grid = build_obstacle_grid(env)
+    final_known_obstacles = int(np.count_nonzero(final_obs_grid))
+    final_valid_visited = np.logical_and(env.visited_grid, np.logical_not(final_obs_grid))
+    acr = (np.count_nonzero(final_valid_visited) / max(1, total_cells - final_known_obstacles)) * 100.0
     
     # Calculate overlap redundancy: average visits per visited cell (excluding zero visits)
     visited_mask = cell_visit_counts > 0
@@ -431,37 +300,33 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     # Total distance traveled by the entire swarm
     total_distance = sum(distances.values())
     
-    return {
+    final_results = {
         'acr': acr,
         'steps': steps,
         'redundancy': redundancy,
         'distance': total_distance,
         'collisions': collision_count
     }
-
-def run_coverage_demo(gui=True, max_steps=1200, world='cafe'):
-    """
-    Maximize area coverage using the Frontier Heuristic (no training required)
-    with continuous_exploration=True so agents keep pursuing new frontier cells
-    instead of terminating on their initial random goal. Runs with Gazebo GUI +
-    RViz by default so coverage can be watched live.
-
-    world='cafe' (default): furnished cafe, realistic obstacle course, plateaus
-    around ~90% since some grid cells are physically inside furniture.
-    world='warehouse': verified obstacle-free 12x12m region of a real Gazebo
-    Fuel model, case study for genuinely-achievable ~100% coverage.
-    """
+    
+    if telemetry_logger is not None:
+        telemetry_logger.finalize_and_export(final_results)
+        
+    return final_results
+def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="checkpoints/run_summary.json"):
     print("\n" + "="*50)
-    print(f"      MARS SWARM COVERAGE DEMO (Frontier Heuristic, world={world})      ")
+    print(f"      FRONTIER HEURISTIC COVERAGE RUN ({max_steps} STEPS, {world.upper()} WORLD, SEED={seed})      ")
     print("="*50 + "\n")
 
-    start_gazebo(headless=not gui, world=world)
+    start_gazebo(headless=not gui, world=world, seed=seed)
 
     print("[coverage-demo] Initializing Swarm Environment...")
     env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True, world=world)
 
+    telemetry_dir = os.path.dirname(export_json) or "checkpoints"
+    telemetry_logger = SwarmTelemetryLogger(log_dir=telemetry_dir, enable_tensorboard=True)
+
     print(f"[coverage-demo] Running single {max_steps}-step episode with dynamic frontier targeting...")
-    res = run_benchmark_episode(env, mode='heuristic', verbose=True)
+    res = run_benchmark_episode(env, mode='heuristic', verbose=True, telemetry_logger=telemetry_logger)
 
     env.close()
     if gazebo_process:
@@ -488,10 +353,12 @@ def main():
     parser.add_argument('--max-steps', type=int, default=1200, help="Max steps for --coverage-demo")
     parser.add_argument('--headless', action='store_true', help="Force headless for --coverage-demo (default is GUI)")
     parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse'], help="World for --coverage-demo: 'cafe' (furnished, ~90%% ceiling) or 'warehouse' (verified obstacle-free case study, ~100%% ceiling)")
+    parser.add_argument('--seed', type=int, default=42, help="Deterministic PRNG seed for Gazebo physics, sensors, and repeatable replay")
+    parser.add_argument('--export-json', type=str, default="checkpoints/run_summary.json", help="Filepath for structured run telemetry JSON export")
     args = parser.parse_args()
 
     if args.coverage_demo:
-        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world)
+        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world, seed=args.seed, export_json=args.export_json)
         return
 
     print("\n" + "="*50)
@@ -528,7 +395,7 @@ def main():
             sys.exit(1)
             
     # Start Gazebo
-    start_gazebo(headless=not args.gui)
+    start_gazebo(headless=not args.gui, seed=args.seed)
     
     print("[benchmark] Initializing Swarm Environment...")
     env = PettingZooSwarmEnv(max_steps=150)

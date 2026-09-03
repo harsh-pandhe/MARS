@@ -1,0 +1,36 @@
+# =============================================================================
+# MARS Swarm Robotics: Training Container (PyTorch + Ray RLlib + CUDA)
+# =============================================================================
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# CUDA and PyTorch environment flags
+ENV TORCHDYNAMO_DISABLE=1
+ENV TORCH_COMPILE_DISABLE=1
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install system dependencies & Python 3.11/3.12
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Install PyTorch with CUDA 12.4 support and MARS dependencies
+COPY requirements.txt /workspace/requirements.txt
+RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
+    pip3 install --no-cache-dir -r /workspace/requirements.txt
+
+# Copy MARS source code
+COPY . /workspace/
+
+ENTRYPOINT ["/bin/bash", "-c", "exec \"$@\"", "--"]
+CMD ["python3", "-m", "pytest", "tests/", "-v"]

@@ -10,6 +10,29 @@ from scipy.optimize import minimize
 
 import rclpy
 from rclpy.node import Node
+
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+try:
+    from cbf_qp_solver import FastCBFSolver
+except ImportError:
+    try:
+        from .cbf_qp_solver import FastCBFSolver
+    except ImportError:
+        from mars_swarm.cbf_qp_solver import FastCBFSolver
+
+try:
+    from scan_matching_localizer import ScanMatchingLocalizer
+except ImportError:
+    try:
+        from .scan_matching_localizer import ScanMatchingLocalizer
+    except ImportError:
+        from mars_swarm.scan_matching_localizer import ScanMatchingLocalizer
+
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry, OccupancyGrid, Path
@@ -144,8 +167,10 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.continuous_exploration = continuous_exploration
         self.world = world
         self.step_count = 0
-
         self.num_lidar_beams = 24
+        self.cbf_solver = FastCBFSolver(l=0.12, d_safe=0.20, gamma=2.0, P_slack=500.0)
+        self.localizer = ScanMatchingLocalizer(search_dist=0.06, search_yaw=0.04, alpha=0.35)
+
 
         # 24 (lidar) + 2 (goal rel) + 2 (vel) + 18 (9 neighbors * 2) = 46
         self.observation_spaces = {
@@ -305,7 +330,18 @@ class PettingZooSwarmEnv(ParallelEnv):
                 global_yaw = local_yaw + spawn_yaw
                 global_yaw = math.atan2(math.sin(global_yaw), math.cos(global_yaw))
                 
-                poses[agent] = (global_x, global_y, global_yaw)
+                # Correct odometry drift via 2D scan-matching localization against known map obstacles
+                scan_msg = self.node.scan_msgs.get(agent)
+                corr_x, corr_y, corr_yaw = self.localizer.get_corrected_pose(
+                    agent=agent,
+                    raw_odom_pose=(global_x, global_y, global_yaw),
+                    scan_msg=scan_msg,
+                    viz_grid=self.viz_grid,
+                    grid_bounds=self.grid_bounds,
+                    viz_res_x=self.viz_resolution_x,
+                    viz_res_y=self.viz_resolution_y
+                )
+                poses[agent] = (corr_x, corr_y, corr_yaw)
                 velocities[agent] = (odom_msg.twist.twist.linear.x, odom_msg.twist.twist.angular.z)
                 
                 if self.step_count % 10 == 0 or self.step_count == 1:
@@ -456,56 +492,87 @@ class PettingZooSwarmEnv(ParallelEnv):
                             self.local_visited_grids[agent][r_grid, c_grid] = True
                             self.visited_grid[r_grid, c_grid] = True
                 
+                # Vectorized raycasting (90 rays per robot)
                 ranges = np.array(scan_msg.ranges, dtype=np.float32)
                 angle_min = scan_msg.angle_min
                 angle_inc = scan_msg.angle_increment
                 range_max = scan_msg.range_max
-                
-                # Step by 4 to keep performance high (90 rays per robot)
-                for i in range(0, len(ranges), 4):
-                    r = ranges[i]
-                    if np.isnan(r) or np.isinf(r) or r < 0.12:
-                        continue
-                    
-                    angle = angle_min + i * angle_inc
-                    global_angle = yaw + angle
-                    
-                    is_obstacle = r < (range_max - 0.2)
-                    r_clipped = min(r, range_max)
-                    
-                    ex = x + r_clipped * math.cos(global_angle)
-                    ey = y + r_clipped * math.sin(global_angle)
-                    
-                    c1 = int(np.clip((ex - min_x) / (max_x - min_x) * self.viz_resolution_x, 0, self.viz_resolution_x - 1))
-                    r1 = int(np.clip((ey - min_y) / (max_y - min_y) * self.viz_resolution_y, 0, self.viz_resolution_y - 1))
-                    
-                    line_cells = bresenham_line(r0, c0, r1, c1, self.viz_resolution_y, self.viz_resolution_x)
-                    
-                    # Mark cells along the ray as free (0) if within coverage limit (2.0m) on local map
-                    for rr, cc in line_cells[:-1]:
-                        cell_x = min_x + (cc + 0.5) * self.map_resolution
-                        cell_y = min_y + (rr + 0.5) * self.map_resolution
-                        if math.hypot(cell_x - x, cell_y - y) <= 2.0:
-                            self.local_viz_grids[agent][rr, cc] = 0
-                            # Map back to local visited grid
-                            r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
-                            c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
-                            self.local_visited_grids[agent][r_grid, c_grid] = True
-                            self.visited_grid[r_grid, c_grid] = True
-                    
-                    # Mark the last cell
-                    if len(line_cells) > 0:
-                        rr, cc = line_cells[-1]
-                        cell_x = min_x + (cc + 0.5) * self.map_resolution
-                        cell_y = min_y + (rr + 0.5) * self.map_resolution
-                        dist = math.hypot(cell_x - x, cell_y - y)
-                        if is_obstacle:
-                            # Obstacles are global/physical boundaries
-                            self.local_viz_grids[agent][rr, cc] = 100
-                        else:
-                            if dist <= 2.0:
+
+                if HAS_CV2:
+                    indices = np.arange(0, len(ranges), 4)
+                    r_sub = ranges[indices]
+                    valid = ~np.isnan(r_sub) & ~np.isinf(r_sub) & (r_sub >= 0.12)
+                    if np.any(valid):
+                        indices = indices[valid]
+                        r_sub = r_sub[valid]
+                        angles = yaw + angle_min + indices * angle_inc
+                        cos_a = np.cos(angles)
+                        sin_a = np.sin(angles)
+
+                        # Free space endpoints (capped at 2.0m coverage limit)
+                        r_free = np.minimum(r_sub, 2.0)
+                        ex_free = x + r_free * cos_a
+                        ey_free = y + r_free * sin_a
+
+                        cx_viz = np.clip((ex_free - min_x) / (max_x - min_x) * self.viz_resolution_x, 0, self.viz_resolution_x - 1).astype(np.int32)
+                        cy_viz = np.clip((ey_free - min_y) / (max_y - min_y) * self.viz_resolution_y, 0, self.viz_resolution_y - 1).astype(np.int32)
+
+                        c0_g = int(np.clip((x - min_x) / (max_x - min_x) * self.grid_resolution_x, 0, self.grid_resolution_x - 1))
+                        r0_g = int(np.clip((y - min_y) / (max_y - min_y) * self.grid_resolution_y, 0, self.grid_resolution_y - 1))
+                        cx_grid = np.clip((ex_free - min_x) / (max_x - min_x) * self.grid_resolution_x, 0, self.grid_resolution_x - 1).astype(np.int32)
+                        cy_grid = np.clip((ey_free - min_y) / (max_y - min_y) * self.grid_resolution_y, 0, self.grid_resolution_y - 1).astype(np.int32)
+
+                        pt0_viz = (c0, r0)
+                        pt0_grid = (c0_g, r0_g)
+                        vis_buf = self.local_visited_grids[agent].view(np.uint8)
+
+                        # Draw all free rays in C++ via OpenCV
+                        for k in range(len(indices)):
+                            cv2.line(self.local_viz_grids[agent], pt0_viz, (int(cx_viz[k]), int(cy_viz[k])), 0, 1)
+                            cv2.line(vis_buf, pt0_grid, (int(cx_grid[k]), int(cy_grid[k])), 1, 1)
+
+                        # Mark obstacles in visualization grid
+                        is_obstacle = r_sub < (range_max - 0.2)
+                        if np.any(is_obstacle):
+                            obs_idx = np.where(is_obstacle)[0]
+                            ox = x + r_sub[obs_idx] * cos_a[obs_idx]
+                            oy = y + r_sub[obs_idx] * sin_a[obs_idx]
+                            ocx = np.clip((ox - min_x) / (max_x - min_x) * self.viz_resolution_x, 0, self.viz_resolution_x - 1).astype(np.int32)
+                            ory = np.clip((oy - min_y) / (max_y - min_y) * self.viz_resolution_y, 0, self.viz_resolution_y - 1).astype(np.int32)
+                            self.local_viz_grids[agent][ory, ocx] = 100
+                else:
+                    # Fallback: Python Bresenham line stepping
+                    for i in range(0, len(ranges), 4):
+                        r = ranges[i]
+                        if np.isnan(r) or np.isinf(r) or r < 0.12:
+                            continue
+                        angle = angle_min + i * angle_inc
+                        global_angle = yaw + angle
+                        is_obstacle = r < (range_max - 0.2)
+                        r_clipped = min(r, range_max)
+                        ex = x + r_clipped * math.cos(global_angle)
+                        ey = y + r_clipped * math.sin(global_angle)
+                        c1 = int(np.clip((ex - min_x) / (max_x - min_x) * self.viz_resolution_x, 0, self.viz_resolution_x - 1))
+                        r1 = int(np.clip((ey - min_y) / (max_y - min_y) * self.viz_resolution_y, 0, self.viz_resolution_y - 1))
+                        line_cells = bresenham_line(r0, c0, r1, c1, self.viz_resolution_y, self.viz_resolution_x)
+                        for rr, cc in line_cells[:-1]:
+                            cell_x = min_x + (cc + 0.5) * self.map_resolution
+                            cell_y = min_y + (rr + 0.5) * self.map_resolution
+                            if math.hypot(cell_x - x, cell_y - y) <= 2.0:
                                 self.local_viz_grids[agent][rr, cc] = 0
-                                # Map back to local visited grid
+                                r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
+                                c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
+                                self.local_visited_grids[agent][r_grid, c_grid] = True
+                                self.visited_grid[r_grid, c_grid] = True
+                        if len(line_cells) > 0:
+                            rr, cc = line_cells[-1]
+                            cell_x = min_x + (cc + 0.5) * self.map_resolution
+                            cell_y = min_y + (rr + 0.5) * self.map_resolution
+                            dist = math.hypot(cell_x - x, cell_y - y)
+                            if is_obstacle:
+                                self.local_viz_grids[agent][rr, cc] = 100
+                            elif dist <= 2.0:
+                                self.local_viz_grids[agent][rr, cc] = 0
                                 r_grid = int(rr * self.grid_resolution_y / self.viz_resolution_y)
                                 c_grid = int(cc * self.grid_resolution_x / self.viz_resolution_x)
                                 self.local_visited_grids[agent][r_grid, c_grid] = True
@@ -624,80 +691,7 @@ class PettingZooSwarmEnv(ParallelEnv):
         lidar_ranges = obs[0:24]
         # Neighbor features: 9 neighbors * 2 features (dist, angle)
         neighbors = obs[28:46].reshape(9, 2)
-        
-        l = 0.12
-        d_safe = 0.20 # safety distance from lookahead point (corresponds to 0.32m physical bubble)
-        gamma = 2.0
-        
-        # Target objective: minimize deviation from nominal commands
-        def objective(u):
-            return (u[0] - v_nom)**2 + 0.05 * (u[1] - w_nom)**2
-            
-        cons = []
-        
-        # 1. LIDAR obstacle constraints (front & rear lookahead points)
-        angles = np.linspace(-np.pi, np.pi, 24)
-        for j in range(24):
-            d_j = lidar_ranges[j]
-            # Ignore far obstacles to keep it fast
-            if d_j > 0.6:
-                continue
-            phi_j = angles[j]
-            
-            # Front lookahead
-            h_front = (l - d_j * np.cos(phi_j))**2 + (d_j * np.sin(phi_j))**2 - d_safe**2
-            A_front = 2 * (l - d_j * np.cos(phi_j))
-            B_front = -2 * l * d_j * np.sin(phi_j)
-            
-            cons.append({
-                'type': 'ineq',
-                'fun': lambda u, A=A_front, B=B_front, h_val=h_front: A * u[0] + B * u[1] + gamma * h_val
-            })
-            
-            # Rear lookahead
-            h_rear = (-l - d_j * np.cos(phi_j))**2 + (d_j * np.sin(phi_j))**2 - d_safe**2
-            A_rear = 2 * (-l - d_j * np.cos(phi_j))
-            B_rear = 2 * l * d_j * np.sin(phi_j)
-            
-            cons.append({
-                'type': 'ineq',
-                'fun': lambda u, A=A_rear, B=B_rear, h_val=h_rear: A * u[0] + B * u[1] + gamma * h_val
-            })
-            
-        # 2. Neighbor constraints (front & rear lookahead points)
-        for dist, angle in neighbors:
-            if dist > 0.6 or dist < 0.01:
-                continue
-            # Front lookahead
-            h_front = (l - dist * np.cos(angle))**2 + (dist * np.sin(angle))**2 - d_safe**2
-            A_front = 2 * (l - dist * np.cos(angle))
-            B_front = -2 * l * dist * np.sin(angle)
-            
-            cons.append({
-                'type': 'ineq',
-                'fun': lambda u, A=A_front, B=B_front, h_val=h_front: A * u[0] + B * u[1] + gamma * h_val
-            })
-            
-            # Rear lookahead
-            h_rear = (-l - dist * np.cos(angle))**2 + (dist * np.sin(angle))**2 - d_safe**2
-            A_rear = 2 * (-l - dist * np.cos(angle))
-            B_rear = 2 * l * dist * np.sin(angle)
-            
-            cons.append({
-                'type': 'ineq',
-                'fun': lambda u, A=A_rear, B=B_rear, h_val=h_rear: A * u[0] + B * u[1] + gamma * h_val
-            })
-            
-        bounds = [(-0.22, 0.22), (-1.0, 1.0)]
-        res = minimize(objective, x0=np.array([v_nom, w_nom]), method='SLSQP', bounds=bounds, constraints=cons)
-        
-        if res.success:
-            return float(res.x[0]), float(res.x[1])
-        else:
-            # QP infeasible: never command uncertified forward motion (would charge
-            # obstacle). Halt linear velocity but keep nominal rotation so the robot
-            # can turn in place to break the deadlock. Reverse is handled by ACAS.
-            return 0.0, w_nom
+        return self.cbf_solver.solve(v_nom, w_nom, lidar_ranges, neighbors)
 
     def step(self, actions):
         # Apply actions

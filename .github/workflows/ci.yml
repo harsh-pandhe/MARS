@@ -1,0 +1,58 @@
+name: MARS Swarm Robotics CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-suite:
+    name: Regression Tests & Build Verification
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup ROS 2 Jazzy
+        run: |
+          sudo apt-get update && sudo apt-get install -y locales
+          sudo locale-gen en_US en_US.UTF-8
+          sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+          sudo apt-get install -y software-properties-common curl
+          sudo add-apt-repository universe
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          sudo apt-get update && sudo apt-get install -y \
+            ros-jazzy-ros-base \
+            ros-jazzy-nav-msgs \
+            ros-jazzy-geometry-msgs \
+            ros-jazzy-sensor-msgs \
+            python3-colcon-common-extensions \
+            build-essential
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+
+      - name: Build ROS 2 Packages with Colcon
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install
+
+      - name: Run Full MARS Automated Test Suite
+        env:
+          TORCHDYNAMO_DISABLE: "1"
+          TORCH_COMPILE_DISABLE: "1"
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          ./run_swarm.sh --test

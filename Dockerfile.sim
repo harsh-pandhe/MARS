@@ -1,0 +1,55 @@
+# =============================================================================
+# MARS Swarm Robotics: Simulation Container (ROS 2 Jazzy + Gazebo Harmonic + EGL)
+# =============================================================================
+FROM osrf/ros:jazzy-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=jazzy
+ENV GZ_VERSION=harmonic
+ENV PYTHONUNBUFFERED=1
+
+# Headless EGL rendering & acceleration libraries
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility,display
+ENV EGL_PLATFORM=surfaceless
+
+# Install ROS 2 Gazebo bridge, navigation packages, and EGL dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-ros-gz \
+    ros-jazzy-ros-gz-bridge \
+    ros-jazzy-ros-gz-sim \
+    ros-jazzy-nav2-msgs \
+    ros-jazzy-nav-msgs \
+    ros-jazzy-geometry-msgs \
+    ros-jazzy-sensor-msgs \
+    libglvnd0 \
+    libgl1 \
+    libglx0 \
+    libegl1 \
+    libgles2 \
+    python3-pip \
+    python3-colcon-common-extensions \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /workspace
+
+# Install Python requirements
+COPY requirements.txt /workspace/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /workspace/requirements.txt
+
+# Copy MARS source code and scripts
+COPY . /workspace/
+
+# Build ROS 2 workspace
+RUN . /opt/ros/jazzy/setup.sh && \
+    colcon build --symlink-install
+
+# Entrypoint setup
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc && \
+    echo "if [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi" >> /root/.bashrc
+
+ENTRYPOINT ["/bin/bash", "-c", "source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && exec \"$@\"", "--"]
+CMD ["./run_swarm.sh", "--test"]

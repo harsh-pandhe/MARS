@@ -34,14 +34,22 @@ from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 # --- Gazebo Launcher Helpers ---
 gazebo_process = None
 
-def start_gazebo(headless=True, multi=True, world='cafe'):
+def start_gazebo(headless=True, multi=True, world='cafe', seed=42):
     global gazebo_process
-    print(f"[train_multi] Starting {'Multi-Robot' if multi else 'Single-Robot'} Gazebo simulation ({world} world) in background...")
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    print(f"[train_multi] Starting {'Multi-Robot' if multi else 'Single-Robot'} Gazebo simulation ({world} world, seed={seed}) in background...")
     cmd = [
         "ros2", "launch", "mars_swarm", "spawn_multi.launch.py",
         f"headless:={str(headless).lower()}",
         f"multi:={str(multi).lower()}",
-        f"world:={world}"
+        f"world:={world}",
+        f"seed:={seed}"
     ]
     # Launch in a separate process group so we can terminate the entire tree
     gazebo_process = subprocess.Popen(

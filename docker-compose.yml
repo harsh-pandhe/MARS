@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Headless ROS 2 Jazzy + Gazebo Harmonic Simulation Service
+  mars_sim:
+    build:
+      context: .
+      dockerfile: Dockerfile.sim
+    container_name: mars_sim
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=42
+      - TORCHDYNAMO_DISABLE=1
+      - TORCH_COMPILE_DISABLE=1
+      - DISPLAY=${DISPLAY}
+      - EGL_PLATFORM=surfaceless
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./:/workspace
+    command: ["./run_swarm.sh", "--test"]
+
+  # PyTorch + Ray RLlib Swarm Training Service
+  mars_train:
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+    container_name: mars_train
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=42
+      - TORCHDYNAMO_DISABLE=1
+      - TORCH_COMPILE_DISABLE=1
+    volumes:
+      - ./:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ["./run_swarm.sh", "--train"]

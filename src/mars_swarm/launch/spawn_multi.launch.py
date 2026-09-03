@@ -60,11 +60,12 @@ def launch_setup(context, *args, **kwargs):
     mars_swarm_share = get_package_share_directory('mars_swarm')
     world_sdf_path = os.path.join(mars_swarm_share, 'worlds', f'{world_name}.sdf')
     
-    # 2. Launch Gazebo Sim with the compiled world
+    # 2. Launch Gazebo Sim with the compiled world and deterministic seed
+    seed_str = context.perform_substitution(LaunchConfiguration('seed'))
     gz_sim_share = get_package_share_directory('ros_gz_sim')
     gz_sim_launch = os.path.join(gz_sim_share, 'launch', 'gz_sim.launch.py')
     
-    gz_args = f'-r {world_sdf_path}'
+    gz_args = f'-r {world_sdf_path} --seed {seed_str}'
     if headless_str.lower() == 'true':
         gz_args += ' -s'
     else:
@@ -293,6 +294,7 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument('world', default_value='cafe', description="World SDF to load (without extension): 'cafe' or 'warehouse'"))
     ld.add_action(DeclareLaunchArgument('enable_static_tf', default_value='true', description='Whether to enable static TF between robot odom frames'))
     ld.add_action(DeclareLaunchArgument('multi', default_value='true', description='Whether to spawn 3 robots (true) or just 1 (false)'))
+    ld.add_action(DeclareLaunchArgument('seed', default_value='42', description='Deterministic PRNG seed for Gazebo physics and sensor noise'))
     
     # Add environment variables
     ld.add_action(set_env_vars_resources)
