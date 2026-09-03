@@ -66,12 +66,12 @@
         <scene>scene</scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
         <background_color>0.8 0.8 0.8</background_color>
-        <!-- Elevated, steeply-pitched overhead view so the default camera frames
-             the whole 30x50m building rather than a fixed close-up the swarm
-             wanders out of once it travels more than a few meters from spawn.
-             x y z roll pitch yaw; pitch ~1.4 rad (~80 deg) looks almost straight
-             down from z=60m, wide enough to keep the full footprint in frame. -->
-        <camera_pose>0 0 60 0 1.4 0</camera_pose>
+        <!-- Close, ground-level 3/4 view centered on the robot spawn point so
+             the swarm is clearly visible driving on the floor at startup.
+             x y z roll pitch yaw; camera sits 3m back and 1.6m up from spawn,
+             pitched down, yawed 45 deg to frame the (0,0) spawn area tightly
+             so the robots stay in view for longer before wandering off. -->
+        <camera_pose>-3 -3 1.6 0 0.45 0.785</camera_pose>
       </plugin>
       <plugin filename="GzSceneManager" name="Scene Manager">
         <gz-gui>
@@ -185,7 +185,7 @@
       </plugin>
     </gui>
 
-    <physics name='3ms' type='ode'>
+    <physics name='3ms' type='dart'>
         <max_step_size>0.003</max_step_size>
         <real_time_factor>1</real_time_factor>
     </physics>
@@ -195,6 +195,29 @@
       <name>warehouse</name>
       <pose>0 0 0 0 0 0</pose>
     </include>
+
+    <!-- The Warehouse Fuel model's floor collision is a raw STL trimesh
+         (warehouse_colision.stl) that ODE/DART fail to generate contacts
+         against reliably -- spawned bodies free-fall straight through it
+         (confirmed by spawning a plain physics box: it fell to z=-80m+ in
+         under 4s with no contact ever registering). This flat box collision
+         gives every dynamic body a robust floor to actually rest on,
+         independent of the fragile mesh. Top surface at z=0 to match the
+         visual floor; invisible (no <visual>) so it doesn't duplicate the
+         Fuel model's own rendered floor. -->
+    <model name="floor_collision_proxy">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <pose>0 0 -0.05 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>32 52 0.1</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
 
   </world>
 </sdf>

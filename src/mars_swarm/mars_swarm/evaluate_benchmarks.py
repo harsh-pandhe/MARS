@@ -148,6 +148,26 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     agent_target_state = {agent: {'cell': None, 'best_dist': None, 'stuck_steps': 0} for agent in env.possible_agents}
     blacklisted_target_cells = set()
 
+    # Position-based stuck detection: the target-cell tracker above resets
+    # stuck_steps to 0 whenever the "closest unvisited cell" changes, which
+    # happens even while an agent is physically frozen -- once wedged, ties
+    # between near-equidistant frontier candidates flip the selected target
+    # cell every step or two (especially as OTHER agents update the shared
+    # visited_grid), so stuck_steps never accumulates and the 25-step
+    # blacklist never fires. Confirmed in a 6000-step run: one agent sat at
+    # the exact same (x, y) for 1350+ consecutive steps (pure in-place
+    # rotation) while target-cell tracking kept "resetting" as if making
+    # progress. This tracker watches raw position instead, so it can't be
+    # fooled by target churn, and escalates to a real escape maneuver
+    # (not just the tiny -0.05 m/step reactive backup) when truly wedged.
+    POSITION_STUCK_STEPS_THRESHOLD = 30
+    POSITION_STUCK_EPS = 0.05  # meters of net movement required per window to not count as stuck
+    ESCAPE_MANEUVER_STEPS = 15
+    agent_position_state = {
+        agent: {'anchor_pos': None, 'pos_stuck_steps': 0, 'escape_steps_left': 0, 'escape_angular': 0.6}
+        for agent in env.possible_agents
+    }
+
     active = True
     while active and steps < env.max_steps:
         actions = {}
@@ -184,6 +204,53 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 # behavior (no worse than before).
                 state = env.last_poses[agent]  # x, y, yaw
                 min_x, max_x, min_y, max_y = env.grid_bounds
+
+                # If currently running the escape maneuver from a prior stuck
+                # detection, keep executing it (bypass normal frontier logic
+                # entirely) until it completes -- a full commit to backing out
+                # and turning away, not the tiny per-step reactive nudge.
+                pstate = agent_position_state[agent]
+                if pstate['escape_steps_left'] > 0:
+                    pstate['escape_steps_left'] -= 1
+                    actions[agent] = np.array([-0.12, pstate['escape_angular']], dtype=np.float32)
+                    continue
+
+                # Position-based stuck check: independent of which frontier
+                # cell is currently selected (see comment at threshold
+                # definition above for why target-cell-based tracking alone
+                # misses this). Anchor resets whenever the agent has moved
+                # POSITION_STUCK_EPS from the anchor; otherwise stuck_steps
+                # accumulates every step regardless of target churn.
+                if pstate['anchor_pos'] is None:
+                    pstate['anchor_pos'] = (state[0], state[1])
+                    pstate['pos_stuck_steps'] = 0
+                else:
+                    moved = math.hypot(state[0] - pstate['anchor_pos'][0], state[1] - pstate['anchor_pos'][1])
+                    if moved > POSITION_STUCK_EPS:
+                        pstate['anchor_pos'] = (state[0], state[1])
+                        pstate['pos_stuck_steps'] = 0
+                    else:
+                        pstate['pos_stuck_steps'] += 1
+
+                if pstate['pos_stuck_steps'] >= POSITION_STUCK_STEPS_THRESHOLD:
+                    # Genuinely wedged (walls/pillar/teammate pocket the
+                    # reactive avoidance alone couldn't clear). Blacklist
+                    # whatever this agent is currently chasing, commit to a
+                    # real escape maneuver, and alternate escape direction
+                    # per agent so two robots stuck near each other don't
+                    # both turn into one another again.
+                    tstate = agent_target_state[agent]
+                    if tstate['cell'] is not None:
+                        blacklisted_target_cells.add(tstate['cell'])
+                    tstate['cell'] = None
+                    tstate['best_dist'] = None
+                    tstate['stuck_steps'] = 0
+                    pstate['pos_stuck_steps'] = 0
+                    pstate['anchor_pos'] = None
+                    pstate['escape_steps_left'] = ESCAPE_MANEUVER_STEPS
+                    pstate['escape_angular'] = -pstate['escape_angular']
+                    actions[agent] = np.array([-0.12, pstate['escape_angular']], dtype=np.float32)
+                    continue
 
                 def world_to_cell(x, y):
                     c = int(np.clip((x - min_x) / (max_x - min_x) * env.grid_resolution_x, 0, env.grid_resolution_x - 1))

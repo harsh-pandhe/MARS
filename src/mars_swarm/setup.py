@@ -17,6 +17,8 @@ setup(
         (os.path.join('share', package_name, 'maps'), glob(os.path.join('maps', '*'))),
         (os.path.join('share', package_name, 'rviz'), glob(os.path.join('rviz', '*.rviz'))),
         (os.path.join('share', package_name, 'worlds'), glob(os.path.join('worlds', '*.sdf'))),
+        (os.path.join('share', package_name, 'urdf'), glob(os.path.join('urdf', '*.xacro'))),
+        (os.path.join('share', package_name, 'meshes', 'turtlebot3_burger'), glob(os.path.join('meshes', 'turtlebot3_burger', '*.stl'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,6 +33,7 @@ setup(
             'tf_relay = mars_swarm.tf_relay:main',
             'evaluate_benchmarks = mars_swarm.evaluate_benchmarks:main',
             'semantic_vision = mars_swarm.semantic_vision:main',
+            'mars_mcp_server = mars_swarm.mars_mcp_server:main',
         ],
     },
 )

@@ -7,6 +7,10 @@ set -e
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${WORKSPACE_DIR}"
 
+# Disable TorchDynamo / Torch Compile to prevent segfault in torch.optim.Adam under Ray/RLlib
+export TORCHDYNAMO_DISABLE=1
+export TORCH_COMPILE_DISABLE=1
+
 # Source ROS 2 and workspace setup files
 if [ -f "/opt/ros/jazzy/setup.bash" ]; then
     source /opt/ros/jazzy/setup.bash
@@ -38,6 +42,8 @@ show_help() {
     echo "  --coverage-demo [N] [--world cafe|warehouse] Run Frontier Heuristic for N steps (default 1200) to maximize area coverage in Gazebo GUI + RViz"
     echo "  --slam              Run SLAM Toolbox mapping on tb1 (with Gazebo GUI & RViz)"
     echo "  --nav               Run Nav2 Stack on the saved sandbox map for all 3 robots (with Gazebo GUI & RViz)"
+    echo "  --test              Run full automated unit and regression test suite"
+    echo "  --mcp               Launch FastMCP server for AI agent introspection and control"
     echo "  --help              Show this help menu"
     echo ""
 }
@@ -247,6 +253,14 @@ case "$1" in
         done
         echo "Running Frontier Heuristic coverage demo (world=${WORLD}, Gazebo GUI + RViz)..."
         python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" --world "${WORLD}" ${HEADLESS_FLAG}
+        ;;
+    --test)
+        echo "Running full automated test suite with pytest..."
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/ -v
+        ;;
+    --mcp)
+        echo "Starting MARS FastMCP Server for ROS 2 / Gazebo..."
+        python3 src/mars_swarm/mars_swarm/mars_mcp_server.py
         ;;
     --help|*)
         show_help

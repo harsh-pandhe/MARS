@@ -155,7 +155,14 @@ def launch_setup(context, *args, **kwargs):
             output='screen'
         )
 
-        robot_sdf = os.path.join(tb3_sim_share, 'urdf', 'gz_waffle.sdf.xacro')
+        # Visual-only 1.6x scale on top of the stock (reliable) Waffle robot:
+        # only the <visual> mesh <scale> tags are multiplied -- mass, joints,
+        # wheel_separation/radius, and collision primitives are all untouched,
+        # so kinematics/physics behave identically to the stock robot that's
+        # confirmed to drive correctly. Tradeoff: the visual mesh is now
+        # slightly larger than its own collision box, so it may look like it
+        # clips into walls/other robots slightly before collision registers.
+        robot_sdf = os.path.join(mars_swarm_share, 'urdf', 'gz_waffle_visual_big.sdf.xacro')
         spawn_node = Node(
             package='ros_gz_sim',
             executable='create',
@@ -263,14 +270,22 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     tb3_sim_share = get_package_share_directory('nav2_minimal_tb3_sim')
-    
+    mars_swarm_share_env = get_package_share_directory('mars_swarm')
+
     # Set Gazebo environment variables for resources
     set_env_vars_resources = AppendEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH', os.path.join(tb3_sim_share, 'models'))
     set_env_vars_resources2 = AppendEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
         str(Path(tb3_sim_share).parent.resolve()))
-    
+    # gz-sim resolves package://<pkg>/... via GZ_SIM_RESOURCE_PATH, not
+    # AMENT_PREFIX_PATH -- without this, package://mars_swarm/meshes/...
+    # (used by gz_waffle_big.sdf.xacro) fails to load and Gazebo falls back
+    # to blank/invisible geometry for the robot visuals.
+    set_env_vars_resources3 = AppendEnvironmentVariable(
+        'GZ_SIM_RESOURCE_PATH',
+        str(Path(mars_swarm_share_env).parent.resolve()))
+
     ld = LaunchDescription()
     
     # Declare launch arguments
@@ -282,6 +297,7 @@ def generate_launch_description():
     # Add environment variables
     ld.add_action(set_env_vars_resources)
     ld.add_action(set_env_vars_resources2)
+    ld.add_action(set_env_vars_resources3)
     
     # Add opaque function to compile xacro and include Gazebo/Spawning
     ld.add_action(OpaqueFunction(function=launch_setup))

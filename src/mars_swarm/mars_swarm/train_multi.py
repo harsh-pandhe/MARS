@@ -1,11 +1,19 @@
 import os
 import sys
+
+# Disable TorchDynamo / Torch Compile to prevent segfault in torch.optim.Adam under Ray/RLlib
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
+os.environ["TORCH_COMPILE_DISABLE"] = "1"
+
 import time
 import signal
 import subprocess
 import argparse
 import numpy as np
 import torch
+if hasattr(torch, "_dynamo"):
+    torch._dynamo.config.disable = True
+    torch._dynamo.config.suppress_errors = True
 import torch.nn as nn
 
 # Ensure path includes workspace packages
