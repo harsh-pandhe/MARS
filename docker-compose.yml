@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Headless ROS 2 Jazzy + Gazebo Harmonic Simulation Service
   mars_sim:

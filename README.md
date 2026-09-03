@@ -26,17 +26,29 @@ graph TD
 
 ---
 
+## System Architecture & Module Map
+
+| Module | Location | Description & Role |
+| :--- | :--- | :--- |
+| **Micro-QP CBF Solver** | [`cbf_qp_solver.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/cbf_qp_solver.py) | High-speed C-accelerated OSQP quadratic program solver ($24\text{ }\mu\text{s}$) filtering nominal velocity commands. Enforces dual-lookahead front/rear collision barriers ($d_{safe}^{obs}=0.20\text{m}$) and inter-agent relative distance barriers ($d_{safe}^{agent}=0.45\text{m}$). |
+| **Decentralized Coordinator** | [`decentralized_coordinator.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/decentralized_coordinator.py) | Fully decentralized swarm coordinator using Dynamic Voronoi cell partitioning and Consensus-Based Bundle Auction (CBAA) protocol over simulated range-limited radio ($d_{comm} \le 3.0\text{m}$). |
+| **Behavior Tree Controller** | [`mission_behavior_tree.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/mission_behavior_tree.py) | Formal `py_trees` mission state machine. Manages stuck recovery maneuvers, frontier exploration, and boundary-safe perimeter patrol upon coverage saturation. |
+| **Scan-Matching Localizer** | [`scan_matching_localizer.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/scan_matching_localizer.py) | 2D Correlative Distance-Field scan matcher (`cv2.distanceTransform`) matching LiDAR scans against known map obstacles, eliminating wheel slip and dead-reckoning drift over long horizons. |
+| **Swarm Telemetry Engine** | [`swarm_telemetry.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/swarm_telemetry.py) | Real-time telemetry logger streaming scalar curves to TensorBoard and exporting structured `run_summary.json` manifests (ACR curve, normalized energy $\int(v^2+\omega^2)dt$, MTBD, and clearance distribution). |
+| **Multi-Env Simulation Wrapper** | [`multi_env_wrapper.py`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/mars_swarm/multi_env_wrapper.py) | PettingZoo parallel multi-agent environment with vectorized OpenCV C++ grid raycasting, inter-agent Active Collision Avoidance (ACAS), and ROS 2 Jazzy bridge coordination. |
+
+---
+
 ## Key Features
 
-1. **Robust Environment Isolation:** Namespaced spawn configurations launching multiple TurtleBot3 Waffles (`tb1`, `tb2`, `tb3`) with fully isolated topic parameter bridges.
-2. **Cooperative Area Coverage Reward:** A grid-based $10 \times 10$ tracking map. The swarm receives collective rewards whenever any active robot explores a previously unvisited sector.
-3. **Multi-Agent Reinforcement Learning (MARL):** Policy sharing MAPPO (Multi-Agent PPO) algorithm implementation using PyTorch under Ray RLlib.
-4. **Transient Noise Rejection:** Custom settling delays (2.0s post-reset) and ROS 2 event flushes to prevent transient start-of-episode Lidar collision reports.
-5. **Fault-Tolerant Resilience Testing:** An independent ROS 2 node (`robot_killer`) designed to hijack and disable individual robots mid-episode to evaluate swarm adaptation capabilities.
-6. **Dual GUI Visualization (Gazebo + RViz):** Runs the physical Gazebo simulator and RViz2 side-by-side. A custom `tf_relay` node merges namespaced `/tbX/tf` transforms under a single root frame (`tb1/odom`) to view all robots, odometry paths, and colored LaserScan point clouds dynamically in one view.
-7. **Graph Neural Networks (GNN):** Permutation-invariant neighbor embedding using a multi-layer MLP encoder and mean pooling, allowing the policy to scale dynamically to an arbitrary number of robots.
-8. **Dual-Lookahead Control Barrier Functions (CBF):** Low-level quadratic program (QP) safety filter enforcing collision avoidance for both front and rear lookahead points, providing 100% collision-free navigation.
-9. **Sparse Decentralized Consensus:** Range-limited map synchronization ($3.0\text{m}$) where robots maintain local belief grids and merge them via bitwise OR.
+1. **Deterministic Single-Threaded Physics:** World configurations (`cafe.sdf`, `warehouse.sdf`) configure single-threaded ODE solvers (`<thread_count>1</thread_count>`) and pass explicit PRNG seeds via `--seed` for 100% bitwise-reproducible benchmark replays.
+2. **Robust Environment Isolation:** Namespaced spawn configurations launching multiple TurtleBot3 Waffles (`tb1`, `tb2`, `tb3`) with fully isolated topic parameter bridges.
+3. **Cooperative Area Coverage Reward:** High-resolution occupancy and coverage grids with obstacle cell exclusion for fair ACR evaluation.
+4. **Multi-Agent Reinforcement Learning (MARL):** Policy sharing MAPPO (Multi-Agent PPO) algorithm implementation using PyTorch under Ray RLlib.
+5. **Transient Noise Rejection:** Custom settling delays and ROS 2 event flushes to prevent transient start-of-episode collision reports.
+6. **Fault-Tolerant Resilience Testing:** An independent ROS 2 node (`robot_killer`) designed to hijack and disable individual robots mid-episode to evaluate swarm adaptation capabilities.
+7. **Dual GUI Visualization (Gazebo + RViz):** Runs Gazebo Sim and RViz2 side-by-side with synchronized robot frames, odometry paths, and colored LaserScan point clouds.
+8. **Automated CI/CD Regression Pipeline:** GitHub Actions workflow executing the 30-test suite across CBF safety, A* pathfinding, Voronoi partitioning, and telemetry.
 
 ---
 

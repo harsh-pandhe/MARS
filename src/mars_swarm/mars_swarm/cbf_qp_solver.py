@@ -35,9 +35,13 @@ class FastCBFSolver:
             0.0   <= delta <= 10.0
     """
     
-    def __init__(self, l=0.12, d_safe=0.20, gamma=2.0, P_slack=500.0, use_osqp=True):
+    def __init__(self, l=0.12, d_safe_obs=0.20, d_safe_agent=0.45, gamma=2.0, P_slack=1000.0, use_osqp=True, d_safe=None):
         self.l = float(l)
-        self.d_safe = float(d_safe)
+        if d_safe is not None:
+            d_safe_obs = float(d_safe)
+        self.d_safe_obs = float(d_safe_obs)
+        self.d_safe_agent = float(d_safe_agent)
+        self.d_safe = float(d_safe_obs)
         self.gamma = float(gamma)
         self.P_slack = float(P_slack)
         self.use_osqp = bool(use_osqp and HAS_OSQP)
@@ -81,7 +85,7 @@ class FastCBFSolver:
                 sin_p = math.sin(phi_j)
                 
                 # Front lookahead: p_front = [l, 0]
-                h_f = (self.l - d_j * cos_p)**2 + (d_j * sin_p)**2 - self.d_safe**2
+                h_f = (self.l - d_j * cos_p)**2 + (d_j * sin_p)**2 - self.d_safe_obs**2
                 A_f = 2.0 * (self.l - d_j * cos_p)
                 B_f = -2.0 * self.l * d_j * sin_p
                 A_rows.append(A_f)
@@ -89,36 +93,31 @@ class FastCBFSolver:
                 h_rows.append(h_f)
                 
                 # Rear lookahead: p_rear = [-l, 0]
-                h_r = (-self.l - d_j * cos_p)**2 + (d_j * sin_p)**2 - self.d_safe**2
+                h_r = (-self.l - d_j * cos_p)**2 + (d_j * sin_p)**2 - self.d_safe_obs**2
                 A_r = 2.0 * (-self.l - d_j * cos_p)
                 B_r = 2.0 * self.l * d_j * sin_p
                 A_rows.append(A_r)
                 B_rows.append(B_r)
                 h_rows.append(h_r)
                 
-        # B. Neighbor constraints
+        # B. Inter-agent constraints (TurtleBot3 Waffle physical footprint: d_safe_agent >= 0.45m)
         if neighbors is not None:
             for dist, angle in neighbors:
-                if dist > 0.60 or dist < 0.01:
+                if dist > 1.20:
                     continue
+                dist = max(float(dist), 0.02)
                 cos_a = math.cos(angle)
                 sin_a = math.sin(angle)
                 
-                # Front lookahead
-                h_f = (self.l - dist * cos_a)**2 + (dist * sin_a)**2 - self.d_safe**2
-                A_f = 2.0 * (self.l - dist * cos_a)
-                B_f = -2.0 * self.l * dist * sin_a
-                A_rows.append(A_f)
-                B_rows.append(B_f)
-                h_rows.append(h_f)
-                
-                # Rear lookahead
-                h_r = (-self.l - dist * cos_a)**2 + (dist * sin_a)**2 - self.d_safe**2
-                A_r = 2.0 * (-self.l - dist * cos_a)
-                B_r = 2.0 * self.l * dist * sin_a
-                A_rows.append(A_r)
-                B_rows.append(B_r)
-                h_rows.append(h_r)
+                # Direct relative distance CBF: h = dist^2 - d_safe_agent^2
+                h_agent = dist**2 - self.d_safe_agent**2
+                # Time derivative: \dot{dist} = -v * cos(angle) - v_neighbor (assumed bounded)
+                # \dot{h} = 2 * dist * (-v * cos(angle)) >= -gamma * h
+                A_agent = -2.0 * dist * cos_a
+                B_agent = -2.0 * self.l * dist * sin_a
+                A_rows.append(A_agent)
+                B_rows.append(B_agent)
+                h_rows.append(h_agent)
                 
         # If no active constraints in proximity, nominal is safe
         if len(A_rows) == 0:

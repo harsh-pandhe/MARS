@@ -97,6 +97,19 @@ def test_cbf_free_space():
     assert np.isclose(w_safe, 0.10, atol=1e-2)
 
 
+def test_cbf_inter_agent_repulsion():
+    """Verify that an approaching neighbor forces forward velocity to zero or negative."""
+    from mars_swarm.cbf_qp_solver import FastCBFSolver
+    solver = FastCBFSolver(l=0.12, d_safe_obs=0.20, d_safe_agent=0.45)
+    lidar_free = np.full(24, 3.5, dtype=np.float32)
+    
+    # Neighbor 0.30m in front (angle=0.0)
+    neighbors = np.array([[0.30, 0.0]], dtype=np.float32)
+    v_safe, w_safe = solver.solve(v_nom=0.20, w_nom=0.0, lidar_ranges=lidar_free, neighbors=neighbors)
+    
+    assert v_safe <= 0.05, f"Approaching neighbor should brake! Got v_safe={v_safe:.3f}"
+
+
 def test_cbf_front_obstacle_braking():
     """With an obstacle straight ahead (0.25m), CBF must reduce or stop forward velocity."""
     obs = np.ones(46, dtype=np.float32) * 3.0

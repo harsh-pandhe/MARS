@@ -168,7 +168,7 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.world = world
         self.step_count = 0
         self.num_lidar_beams = 24
-        self.cbf_solver = FastCBFSolver(l=0.12, d_safe=0.20, gamma=2.0, P_slack=500.0)
+        self.cbf_solver = FastCBFSolver(l=0.12, d_safe_obs=0.20, d_safe_agent=0.45, gamma=2.0, P_slack=1000.0)
         self.localizer = ScanMatchingLocalizer(search_dist=0.06, search_yaw=0.04, alpha=0.35)
 
 
@@ -387,9 +387,10 @@ class PettingZooSwarmEnv(ParallelEnv):
                 lidar_obs.append(np.min(sector) if len(sector) > 0 else scan_msg.range_max)
             lidar_obs = np.array(lidar_obs, dtype=np.float32)
             
-            collision = np.min(lidar_obs) < 0.20
+            # Physical collision threshold (TurtleBot3 Waffle physical bumper radius from LiDAR center)
+            collision = np.min(lidar_obs) < 0.14
             if collision:
-                print(f"[DEBUG] {agent} LIDAR COLLISION! Min range: {np.min(lidar_obs):.3f} m (beam index: {np.argmin(lidar_obs)})")
+                print(f"[DEBUG] {agent} BUMPER CONTACT! Min range: {np.min(lidar_obs):.3f} m (beam index: {np.argmin(lidar_obs)})")
             if self.step_count <= 15:
                 collision = False
             
@@ -710,6 +711,20 @@ class PettingZooSwarmEnv(ParallelEnv):
                     min_dist = np.min(raw_ranges)
                     if min_dist < 0.22 and v_nom > 0.0:
                         v_nom = -0.08  # Slowly back away from wall/obstacle
+
+                # Inter-agent Active Safeguard: If another robot is within 0.45m in front, brake
+                if agent in self.last_poses:
+                    ax, ay, ayaw = self.last_poses[agent]
+                    for other in self.possible_agents:
+                        if other == agent or other not in self.last_poses:
+                            continue
+                        ox, oy, _ = self.last_poses[other]
+                        sep = math.hypot(ox - ax, oy - ay)
+                        if sep < 0.45:
+                            rel_angle = math.atan2(oy - ay, ox - ax) - ayaw
+                            rel_angle = math.atan2(math.sin(rel_angle), math.cos(rel_angle))
+                            if abs(rel_angle) < math.pi / 2.5 and v_nom > 0.0:
+                                v_nom = -0.05
                 
                 # Filter velocities via Control Barrier Function
                 v_safe, w_safe = self._apply_cbf(agent, v_nom, w_nom)

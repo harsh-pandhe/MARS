@@ -140,8 +140,9 @@ case "$1" in
         wait $SIM_PID $NAV_PID $RVIZ_PID
         ;;
     --train)
+        shift
         echo "Starting MAPPO training loop..."
-        python3 src/mars_swarm/mars_swarm/train_multi.py --train
+        python3 src/mars_swarm/mars_swarm/train_multi.py --train "$@"
         ;;
     --evaluate)
         if [ -z "$2" ]; then

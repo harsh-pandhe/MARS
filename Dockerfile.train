@@ -26,8 +26,7 @@ WORKDIR /workspace
 
 # Install PyTorch with CUDA 12.4 support and MARS dependencies
 COPY requirements.txt /workspace/requirements.txt
-RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
-    pip3 install --no-cache-dir -r /workspace/requirements.txt
+RUN pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu124 -r /workspace/requirements.txt
 
 # Copy MARS source code
 COPY . /workspace/

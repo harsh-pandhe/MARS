@@ -454,8 +454,8 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
         
         print(f"Iteration {i:2d}/{iterations} | Mean Swarm Reward: {reward_mean:.2f} | Policy Loss: {loss:.4f}")
         
-        # Save checkpoints periodically
-        if i % 5 == 0:
+        # Save checkpoints periodically and on final iteration
+        if i % 5 == 0 or i == iterations:
             checkpoint_path = algo.save(checkpoint_dir)
             print(f"[train_multi] Saved checkpoint: {checkpoint_path}")
             
