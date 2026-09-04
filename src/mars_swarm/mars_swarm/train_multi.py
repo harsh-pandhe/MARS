@@ -490,8 +490,9 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
     register_env("mars_swarm_v0", env_creator)
     
     # 3. Load Algorithm from Checkpoint
-    print(f"[train_multi] Loading Algorithm from checkpoint: {checkpoint_path}")
-    algo = CentralizedCritic.from_checkpoint(checkpoint_path)
+    abs_ckpt = os.path.abspath(checkpoint_path)
+    print(f"[train_multi] Loading Algorithm from checkpoint: {abs_ckpt}")
+    algo = CentralizedCritic.from_checkpoint(abs_ckpt)
     
     # 4. Start Gazebo
     start_gazebo(headless=headless)

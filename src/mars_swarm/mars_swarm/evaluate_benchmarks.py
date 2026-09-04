@@ -397,8 +397,14 @@ def main():
         
         print(f"[benchmark] Loading MAPPO checkpoint from {args.checkpoint}...")
         try:
-            algo = CentralizedCritic.from_checkpoint(args.checkpoint)
-            policy = algo.get_policy("shared_policy")
+            ckpt_path = os.path.abspath(args.checkpoint)
+            shared_policy_dir = os.path.join(ckpt_path, "policies", "shared_policy")
+            if os.path.isdir(shared_policy_dir):
+                from ray.rllib.policy.policy import Policy
+                policy = Policy.from_checkpoint(shared_policy_dir)
+            else:
+                algo = CentralizedCritic.from_checkpoint(ckpt_path)
+                policy = algo.get_policy("shared_policy")
             print("[benchmark] MAPPO policy loaded successfully.")
         except Exception as e:
             print(f"[benchmark] ERROR: Failed to load policy: {e}")
