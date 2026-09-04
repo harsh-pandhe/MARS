@@ -44,7 +44,8 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed -r /w
 COPY . /workspace/
 
 # Build ROS 2 workspace
-RUN . /opt/ros/jazzy/setup.sh && \
+RUN rm -rf /workspace/build /workspace/install /workspace/log && \
+    . /opt/ros/jazzy/setup.sh && \
     colcon build --symlink-install
 
 # Entrypoint setup
