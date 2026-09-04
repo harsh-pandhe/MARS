@@ -50,14 +50,19 @@ class SwarmTelemetryLogger:
         self.deadlock_timestamps = []
         self.clearances_history = []
         self.collision_events = 0
+        self.wall_collision_events = 0
+        self.agent_collision_events = 0
         
-    def record_step(self, step, acr, actions_dict, poses_dict, is_deadlock_event=False, collisions=0):
+    def record_step(self, step, acr, actions_dict, poses_dict, is_deadlock_event=False,
+                    collisions=0, wall_collisions=0, agent_collisions=0):
         """
         Record telemetry snapshot for a single simulation step.
         """
         self.steps = step
         self.acr_curve.append((int(step), float(round(acr, 2))))
         self.collision_events = collisions
+        self.wall_collision_events = wall_collisions
+        self.agent_collision_events = agent_collisions
         
         # 1. Energy consumption: sum(v^2 + omega^2) * dt across agents
         step_energy = 0.0
@@ -94,6 +99,8 @@ class SwarmTelemetryLogger:
             self.writer.add_scalar("Swarm/CumulativeEnergy", self.cumulative_energy, step)
             if len(self.clearances_history) > 0:
                 self.writer.add_scalar("Swarm/MinClearance", self.clearances_history[-1], step)
+            self.writer.add_scalar("Swarm/WallCollisions", self.wall_collision_events, step)
+            self.writer.add_scalar("Swarm/AgentCollisions", self.agent_collision_events, step)
                 
     def finalize_and_export(self, final_results, export_path=None):
         """
@@ -121,6 +128,10 @@ class SwarmTelemetryLogger:
         clearance_arr = np.array(self.clearances_history, dtype=np.float32) if len(self.clearances_history) > 0 else np.array([0.0])
         hist_counts, bin_edges = np.histogram(clearance_arr, bins=10, range=(0.0, 3.0))
         
+        total_coll = int(final_results.get('collisions', self.collision_events))
+        wall_coll = int(final_results.get('wall_collisions', self.wall_collision_events))
+        agent_coll = int(final_results.get('agent_collisions', self.agent_collision_events))
+
         summary_payload = {
             "final_acr_percent": round(final_acr, 2),
             "total_steps": int(self.steps),
@@ -128,7 +139,9 @@ class SwarmTelemetryLogger:
             "cumulative_energy_joules_proxy": round(self.cumulative_energy, 3),
             "normalized_energy_j_per_m": round(normalized_energy, 4),
             "cell_overlap_redundancy": round(redundancy, 2),
-            "total_collisions": int(self.collision_events),
+            "total_collisions": total_coll,
+            "wall_collisions": wall_coll,
+            "agent_collisions": agent_coll,
             "deadlock_count": int(num_deadlocks),
             "mean_time_between_deadlocks_steps": round(mtbd_steps, 1),
             "inter_robot_clearance": {

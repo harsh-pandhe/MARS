@@ -798,6 +798,9 @@ class PettingZooSwarmEnv(ParallelEnv):
                     obs_dict[agent][24] = new_dist
                     print(f"[{agent}] Goal reached! Dynamically assigned new goal: {self.goal_positions[agent]}")
                     
+            wall_contact = collision_dict[agent]
+            agent_contact = False
+            collision = wall_contact
             if collision:
                 # Softened -20.0->-8.0: at -20 a single collision could swamp the
                 # whole advantage estimate for a short (~90-150 step) episode,
@@ -818,6 +821,7 @@ class PettingZooSwarmEnv(ParallelEnv):
                         reward -= 10.0
                         if self.step_count > 15:
                             collision = True
+                            agent_contact = True
                             print(f"[DEBUG] {agent} INTER-AGENT COLLISION with {other}! Distance: {sep:.3f} m")
                         
             rewards[agent] = reward
@@ -833,7 +837,9 @@ class PettingZooSwarmEnv(ParallelEnv):
                 'y': state_dict[agent][1],
                 'yaw': state_dict[agent][2],
                 'goal_dist': dist,
-                'status': 'SUCCESS' if goal_reached else ('FAILED' if collision else 'RUNNING')
+                'status': 'SUCCESS' if goal_reached else ('FAILED' if collision else 'RUNNING'),
+                'wall_contact': wall_contact,
+                'agent_contact': agent_contact
             }
             
         # Filter obs to include only active agents for this step

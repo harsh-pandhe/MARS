@@ -80,8 +80,8 @@ def test_telemetry_run_summary_json_export():
         required_keys = [
             'final_acr_percent', 'total_steps', 'total_distance_meters',
             'cumulative_energy_joules_proxy', 'normalized_energy_j_per_m',
-            'cell_overlap_redundancy', 'total_collisions', 'deadlock_count',
-            'mean_time_between_deadlocks_steps', 'inter_robot_clearance', 'acr_curve_sampled'
+            'cell_overlap_redundancy', 'total_collisions', 'wall_collisions', 'agent_collisions',
+            'deadlock_count', 'mean_time_between_deadlocks_steps', 'inter_robot_clearance', 'acr_curve_sampled'
         ]
         for k in required_keys:
             assert k in data, f"Missing required telemetry key: {k}"

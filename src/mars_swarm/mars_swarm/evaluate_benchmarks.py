@@ -144,6 +144,8 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
 
     # Collision tracking: count unique agent-steps flagged FAILED (lidar/inter-agent)
     collision_count = 0
+    wall_collision_count = 0
+    agent_collision_count = 0
     
     # Pick a random agent to fail if failure injection is enabled
     failed_agent = 'tb2'
@@ -246,6 +248,10 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         # 3. Track Metrics
         for agent in env.possible_agents:
             if agent in infos:
+                if infos[agent].get('wall_contact', False):
+                    wall_collision_count += 1
+                if infos[agent].get('agent_contact', False):
+                    agent_collision_count += 1
                 if infos[agent].get('status') == 'FAILED':
                     collision_count += 1
                 cx, cy = infos[agent]['x'], infos[agent]['y']
@@ -281,7 +287,9 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 actions_dict=actions,
                 poses_dict=env.last_poses,
                 is_deadlock_event=is_deadlock,
-                collisions=collision_count
+                collisions=collision_count,
+                wall_collisions=wall_collision_count,
+                agent_collisions=agent_collision_count
             )
 
         if verbose and steps % 50 == 0:
@@ -305,7 +313,9 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         'steps': steps,
         'redundancy': redundancy,
         'distance': total_distance,
-        'collisions': collision_count
+        'collisions': collision_count,
+        'wall_collisions': wall_collision_count,
+        'agent_collisions': agent_collision_count
     }
     
     if telemetry_logger is not None:
@@ -341,7 +351,7 @@ def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_js
     print("\n" + "="*50)
     print(f"FINAL COVERAGE: {res['acr']:.1f}%  | Steps: {res['steps']} | "
           f"Redundancy: {res['redundancy']:.2f} | Distance: {res['distance']:.2f}m | "
-          f"Collisions: {res['collisions']}")
+          f"Collisions: {res['collisions']} (Wall: {res['wall_collisions']}, Agent: {res['agent_collisions']})")
     print("="*50 + "\n")
 
 def main():
