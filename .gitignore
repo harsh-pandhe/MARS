@@ -34,6 +34,7 @@ swarm_record_*/
 *.db3
 *.mcap
 *.png
+!checkpoints/benchmark_results.png
 *.jpg
 *.jpeg
 *.webp
@@ -48,7 +49,11 @@ swarm_record_*/
 .settings/
 
 # Checkpoints / Cache
-checkpoints/
+checkpoints/*
+!checkpoints/run_summary.json
+!checkpoints/benchmark_results.png
+checkpoints/*.tfevents*
 .pytest_cache/
 .gemini/
 .ipynb_checkpoints/
+
