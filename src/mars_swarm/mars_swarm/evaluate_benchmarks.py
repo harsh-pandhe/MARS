@@ -387,8 +387,13 @@ def main():
         # Register Custom Centralized Critic Model
         ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
         
-        # Initialize Ray
-        ray.init(ignore_reinit_error=True)
+        # Initialize Ray with localhost binding and memory protections
+        os.environ["ENABLE_RAY_CLUSTER"] = "0"
+        ray.init(
+            _node_ip_address="127.0.0.1",
+            object_store_memory=500 * 1024 * 1024,
+            ignore_reinit_error=True
+        )
         
         # Register Environment
         def env_creator(config_dict):
@@ -465,10 +470,12 @@ def main():
     for name, metrics in results_data.items():
         mean_acr = np.mean(metrics['acr'])
         std_acr = np.std(metrics['acr'])
+        median_acr = np.median(metrics['acr'])
         mean_red = np.mean(metrics['redundancy'])
+        median_red = np.median(metrics['redundancy'])
         mean_dist = np.mean(metrics['distance'])
         mean_coll = np.mean(metrics['collisions'])
-        print(f"{name:25s} | ACR: {mean_acr:5.1f} ± {std_acr:3.1f}% | Overlap Redundancy: {mean_red:4.2f} | Energy: {mean_dist:5.1f}m | Collisions: {mean_coll:4.2f}")
+        print(f"{name:25s} | ACR: {mean_acr:5.1f} ± {std_acr:3.1f}% (med: {median_acr:5.1f}%) | Overlap Redundancy: {mean_red:4.2f} (med: {median_red:4.2f}) | Energy: {mean_dist:5.1f}m | Collisions: {mean_coll:4.2f}")
         
     # Generate Box-and-Whisker Plots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))

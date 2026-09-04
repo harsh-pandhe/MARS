@@ -362,7 +362,7 @@ class CentralizedCritic(PPO):
 
 
 # --- MAPPO RLlib Training ---
-def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
+def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True, restore=""):
     import ray
     from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
     from ray.tune.registry import register_env
@@ -370,8 +370,13 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     # Register Custom Centralized Critic Model
     ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
     
-    # 1. Initialize Ray
-    ray.init(ignore_reinit_error=True)
+    # 1. Initialize Ray with localhost binding and memory protections
+    os.environ["ENABLE_RAY_CLUSTER"] = "0"
+    ray.init(
+        _node_ip_address="127.0.0.1",
+        object_store_memory=500 * 1024 * 1024,
+        ignore_reinit_error=True
+    )
     
     # 2. Register Environment
     # max_steps shortened 150->90: episode-reset overhead (~2s settle) is fixed
@@ -440,7 +445,15 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True):
     algo = CentralizedCritic(config=config)
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    for i in range(1, iterations + 1):
+    start_iter = 1
+    if restore and os.path.exists(restore):
+        abs_restore = os.path.abspath(restore)
+        print(f"[train_multi] Restoring training state from {abs_restore}...")
+        algo.restore(abs_restore)
+        start_iter = algo.iteration + 1
+        print(f"[train_multi] Resuming training from iteration {start_iter} up to {iterations}...")
+    
+    for i in range(start_iter, iterations + 1):
         result = algo.train()
         # New RLlib nests episode stats under 'env_runners'; fall back to top level.
         reward_mean = result.get('env_runners', {}).get(
@@ -480,8 +493,13 @@ def run_evaluation(checkpoint_path, episodes=5, headless=False):
     # Register Custom Centralized Critic Model
     ModelCatalog.register_custom_model("cc_model", TorchCentralizedCriticModel)
     
-    # 1. Initialize Ray
-    ray.init(ignore_reinit_error=True)
+    # 1. Initialize Ray with localhost binding and memory protections
+    os.environ["ENABLE_RAY_CLUSTER"] = "0"
+    ray.init(
+        _node_ip_address="127.0.0.1",
+        object_store_memory=500 * 1024 * 1024,
+        ignore_reinit_error=True
+    )
     
     # 2. Register Environment
     def env_creator(config_dict):
@@ -563,6 +581,7 @@ def main():
     parser.add_argument('--checkpoint', type=str, default="", help="Path to checkpoint directory for evaluation")
     parser.add_argument('--episodes', type=int, default=5, help="Number of evaluation episodes")
     parser.add_argument('--iterations', type=int, default=45, help="Number of training iterations")
+    parser.add_argument('--restore', type=str, default="", help="Path to checkpoint directory to resume training from")
     parser.add_argument('--gui', action='store_true', help="Run Gazebo with GUI enabled (not headless)")
     args = parser.parse_args()
     
@@ -572,7 +591,7 @@ def main():
             sys.exit(1)
         run_evaluation(checkpoint_path=args.checkpoint, episodes=args.episodes, headless=not args.gui)
     elif args.train:
-        run_training(iterations=args.iterations, headless=not args.gui)
+        run_training(iterations=args.iterations, headless=not args.gui, restore=args.restore)
     else:
         # Run demo mode
         start_gazebo(headless=not args.gui)
