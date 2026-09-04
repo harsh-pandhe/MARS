@@ -38,7 +38,7 @@ WORKDIR /workspace
 
 # Install Python requirements
 COPY requirements.txt /workspace/requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages -r /workspace/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed -r /workspace/requirements.txt
 
 # Copy MARS source code and scripts
 COPY . /workspace/
