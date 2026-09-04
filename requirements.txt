@@ -2,7 +2,7 @@
 # Cross-compatible with Python 3.10 (Ubuntu 22.04 container) and Python 3.12 (Host/CI)
 torch==2.12.0
 torchvision==0.27.0
-ray==2.55.1
+ray[rllib,tune]==2.55.1
 gymnasium==1.2.2
 pettingzoo==1.26.1
 opencv-python==4.13.0.92
@@ -16,3 +16,4 @@ scipy==1.15.2
 numpy==2.2.3
 dm-tree==0.1.9
 pandas==2.2.3
+pyarrow==20.0.0
