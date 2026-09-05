@@ -291,7 +291,7 @@ def generate_launch_description():
     
     # Declare launch arguments
     ld.add_action(DeclareLaunchArgument('headless', default_value='true', description='Run Gazebo headless (no GUI)'))
-    ld.add_action(DeclareLaunchArgument('world', default_value='cafe', description="World SDF to load (without extension): 'cafe' or 'warehouse'"))
+    ld.add_action(DeclareLaunchArgument('world', default_value='cafe', description="World SDF to load (without extension): 'cafe', 'warehouse', 'depot', 'office', or 'maze'"))
     ld.add_action(DeclareLaunchArgument('enable_static_tf', default_value='true', description='Whether to enable static TF between robot odom frames'))
     ld.add_action(DeclareLaunchArgument('multi', default_value='true', description='Whether to spawn 3 robots (true) or just 1 (false)'))
     ld.add_action(DeclareLaunchArgument('seed', default_value='42', description='Deterministic PRNG seed for Gazebo physics and sensor noise'))

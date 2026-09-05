@@ -124,7 +124,7 @@ def run_headless_coverage_test(steps: int = 50, world: str = "cafe") -> Dict[str
     
     Args:
         steps: Number of simulation steps to run (e.g. 50).
-        world: World environment ('cafe' or 'warehouse').
+        world: World environment ('cafe', 'warehouse', 'depot', 'office', or 'maze').
     """
     cmd = (
         f"source /opt/ros/jazzy/setup.bash && "

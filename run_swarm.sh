@@ -196,12 +196,13 @@ case "$1" in
         ros2 bag record -o "${BAG_NAME}" /tb1/odom /tb2/odom /tb3/odom /tb1/scan /tb2/scan /tb3/scan /tf /tf_static /map &
         BAG_PID=$!
         
-        # Start evaluation
-        if [ ! -z "${CHECKPOINT}" ]; then
-            python3 src/mars_swarm/mars_swarm/train_multi.py --evaluate --checkpoint "${CHECKPOINT}"
-        else
-            # If no checkpoint, run the benchmark suite (default to Frontier Heuristic/Random)
-            python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py
+        # Run evaluation headless
+        echo "Running evaluation episode for recording..."
+        python3 src/mars_swarm/mars_swarm/evaluate.py --checkpoint "${CHECKPOINT}" --episodes 1 --headless
+        
+        # Wait for file sync
+        if ps -p $BAG_PID > /dev/null; then
+           sleep 2
         fi
         
         # Stop recording
@@ -211,11 +212,16 @@ case "$1" in
     --benchmark)
         CHECKPOINT=""
         GUI_FLAG=""
+        WORLD_ARG="cafe"
         shift
         while [ "$#" -gt 0 ]; do
             case "$1" in
                 --gui)
                     GUI_FLAG="--gui"
+                    ;;
+                --world)
+                    shift
+                    WORLD_ARG="$1"
                     ;;
                 *)
                     CHECKPOINT="$1"
@@ -225,11 +231,11 @@ case "$1" in
         done
 
         if [ -z "${CHECKPOINT}" ]; then
-            echo "No policy checkpoint provided. Running control baseline benchmarks only (Random & Heuristic Frontier)..."
-            python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py ${GUI_FLAG}
+            echo "No policy checkpoint provided. Running control baseline benchmarks only (Random & Heuristic Frontier) for world=${WORLD_ARG}..."
+            python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --world "${WORLD_ARG}" ${GUI_FLAG}
         else
-            echo "Running full quantitative benchmarking suite including MAPPO policy from ${CHECKPOINT}..."
-            python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --checkpoint "${CHECKPOINT}" ${GUI_FLAG}
+            echo "Running full quantitative benchmarking suite including MAPPO policy from ${CHECKPOINT} for world=${WORLD_ARG}..."
+            python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --checkpoint "${CHECKPOINT}" --world "${WORLD_ARG}" ${GUI_FLAG}
         fi
         ;;
     --coverage-demo)

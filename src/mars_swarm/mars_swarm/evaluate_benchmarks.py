@@ -322,7 +322,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         telemetry_logger.finalize_and_export(final_results)
         
     return final_results
-def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="checkpoints/run_summary.json"):
+def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json=""):
     print("\n" + "="*50)
     print(f"      FRONTIER HEURISTIC COVERAGE RUN ({max_steps} STEPS, {world.upper()} WORLD, SEED={seed})      ")
     print("="*50 + "\n")
@@ -332,11 +332,16 @@ def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_js
     print("[coverage-demo] Initializing Swarm Environment...")
     env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True, world=world)
 
-    telemetry_dir = os.path.dirname(export_json) or "checkpoints"
-    telemetry_logger = SwarmTelemetryLogger(log_dir=telemetry_dir, enable_tensorboard=True)
+    telemetry_logger = None
+    if export_json:
+        telemetry_dir = os.path.dirname(export_json) or "checkpoints"
+        telemetry_logger = SwarmTelemetryLogger(log_dir=telemetry_dir, enable_tensorboard=True)
 
     print(f"[coverage-demo] Running single {max_steps}-step episode with dynamic frontier targeting...")
     res = run_benchmark_episode(env, mode='heuristic', verbose=True, telemetry_logger=telemetry_logger)
+
+    if telemetry_logger and export_json:
+        telemetry_logger.finalize_and_export(res, export_path=export_json)
 
     env.close()
     if gazebo_process:
@@ -362,9 +367,9 @@ def main():
     parser.add_argument('--coverage-demo', action='store_true', help="Run a single long Frontier Heuristic episode to maximize area coverage (GUI+RViz by default)")
     parser.add_argument('--max-steps', type=int, default=1200, help="Max steps for --coverage-demo")
     parser.add_argument('--headless', action='store_true', help="Force headless for --coverage-demo (default is GUI)")
-    parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse'], help="World for --coverage-demo: 'cafe' (furnished, ~90%% ceiling) or 'warehouse' (verified obstacle-free case study, ~100%% ceiling)")
+    parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse', 'depot', 'office', 'maze'], help="World for benchmarking/demo: 'cafe', 'warehouse', 'depot', 'office', 'maze'")
     parser.add_argument('--seed', type=int, default=42, help="Deterministic PRNG seed for Gazebo physics, sensors, and repeatable replay")
-    parser.add_argument('--export-json', type=str, default="checkpoints/run_summary.json", help="Filepath for structured run telemetry JSON export")
+    parser.add_argument('--export-json', type=str, default="", help="Optional filepath for structured run telemetry JSON export")
     args = parser.parse_args()
 
     if args.coverage_demo:
@@ -397,7 +402,7 @@ def main():
         
         # Register Environment
         def env_creator(config_dict):
-            return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150))
+            return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=150, world=args.world))
         register_env("mars_swarm_v0", env_creator)
         
         print(f"[benchmark] Loading MAPPO checkpoint from {args.checkpoint}...")
@@ -416,10 +421,10 @@ def main():
             sys.exit(1)
             
     # Start Gazebo
-    start_gazebo(headless=not args.gui, seed=args.seed)
+    start_gazebo(headless=not args.gui, world=args.world, seed=args.seed)
     
-    print("[benchmark] Initializing Swarm Environment...")
-    env = PettingZooSwarmEnv(max_steps=150)
+    print(f"[benchmark] Initializing Swarm Environment for world='{args.world}'...")
+    env = PettingZooSwarmEnv(max_steps=150, world=args.world)
     
     # Benchmarking configurations
     scenarios = [

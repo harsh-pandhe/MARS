@@ -217,6 +217,51 @@ class PettingZooSwarmEnv(ParallelEnv):
             # 500/125=4 exactly), avoiding ratio-truncation in build_obstacle_grid.
             self.grid_resolution_x = 75
             self.grid_resolution_y = 125
+        elif world == 'depot':
+            # Industrial Depot (29m x 15m) from Gazebo Fuel (OpenRobotics/Depot)
+            self.safe_goals_world = [
+                (x, y)
+                for x in (-10.0, -5.0, 0.0, 5.0, 10.0)
+                for y in (-5.0, 0.0, 5.0)
+            ]
+            self.safe_goals = []
+            for gx, gy in self.safe_goals_world:
+                gx_local = -gy
+                gy_local = gx
+                self.safe_goals.append((gx_local, gy_local))
+            self.grid_bounds = (-8.0, 8.0, -15.0, 15.0)
+            self.grid_resolution_x = 40
+            self.grid_resolution_y = 75
+        elif world == 'office':
+            # Multi-room corporate office (26m x 18m) from Gazebo Fuel (OpenRobotics/OSRF First Office)
+            self.safe_goals_world = [
+                (x, y)
+                for x in (-7.0, -2.0, 3.0, 8.0)
+                for y in (-8.0, -3.0, 2.0, 5.0)
+            ]
+            self.safe_goals = []
+            for gx, gy in self.safe_goals_world:
+                gx_local = -gy
+                gy_local = gx
+                self.safe_goals.append((gx_local, gy_local))
+            self.grid_bounds = (-10.0, 10.0, -14.0, 14.0)
+            self.grid_resolution_x = 50
+            self.grid_resolution_y = 70
+        elif world == 'maze':
+            # Labyrinthine corridor maze (64m x 11m) from Gazebo Fuel (ahmetraufoktay/maze_model_rs)
+            self.safe_goals_world = [
+                (x, y)
+                for x in (0.0, 8.0, 16.0, 24.0, 32.0, 40.0, 48.0)
+                for y in (-2.0, 1.0, 4.0)
+            ]
+            self.safe_goals = []
+            for gx, gy in self.safe_goals_world:
+                gx_local = -gy
+                gy_local = gx
+                self.safe_goals.append((gx_local, gy_local))
+            self.grid_bounds = (-6.0, 6.0, -8.0, 56.0)
+            self.grid_resolution_x = 30
+            self.grid_resolution_y = 160
         else:
             self.safe_goals_world = [
                 (-3.5, -8.0), (2.5, -8.0),
