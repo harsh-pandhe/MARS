@@ -152,5 +152,13 @@ Each robot receives a state observation vector containing:
 
 > **Final Project Report:** In rigorous multi-robot coverage benchmarking across Gazebo simulation environments, the classical Frontier Heuristic achieved a verified **100.0%** final Area Coverage Rate (ACR) in the obstacle-free warehouse world at step 8,500 ([`checkpoints/run_summary.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/run_summary.json)) and a **56.0%** ceiling in the furnished cafe world across 12,000 steps, demonstrating that the warehouse ceiling was purely step-starved rather than capability-limited. Across a 50-episode quantitative comparison (10 episodes per condition, 150 steps/ep in the cafe world), the Frontier Heuristic significantly outperformed learned MARL, delivering a median ACR of **38.6%** (mean $35.2 \pm 14.2\%$, distance $5.4\text{ m}$) compared to **14.5%** for MAPPO Nominal ($14.0 \pm 0.9\%$, distance $1.5\text{ m}$), **12.0%** under Gaussian sensor noise, and **9.3%** under single-agent failure—lagging even Random Walk (**29.6%** median ACR, $7.4\text{ m}$ distance). MAPPO underperformed because dense collision penalties drove the policy into a hyper-conservative local optimum where agents hovered in place to avoid penalties (resulting in an overlap redundancy of $43.91$ vs. $16.77$ for the heuristic). Safety enforcement succeeded in eliminating agent-agent collisions (**0.00** across all 50 benchmarking episodes via Control Barrier Functions), but static wall collisions persisted at **1.0–2.5** grazing contacts per episode (and 17,018 sensor hits over 9,050 warehouse steps), documenting key system limitations: MARL requires exploratory trajectory shaping to escape penalty-aversion freezing, full warehouse coverage demands a minimum budget of $\ge 10,000$ steps, and zero wall-contact rates require proactive CBF repelling margins along continuous perimeter boundaries.
 
+---
+
+## Benchmark Environments & Fuel Worlds Expansion
+
+For detailed physical parameters, single-threaded deterministic ODE physics specifications, 1,200-step comparisons, and extended ceiling runs across all 5 supported environments (`cafe`, `warehouse`, `depot`, `office`, `maze`), see:
+- [**Benchmark Worlds & Fuel Environments Report**](file:///home/harsh-pandhe/GitHub/MARS/docs/BENCHMARK_WORLDS.md)
+
+
 
 
