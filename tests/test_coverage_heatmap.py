@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'mars_swarm', 'mars_swarm')))
-from coverage_heatmap_renderer import render_coverage_heatmap
+from coverage_heatmap_renderer import render_coverage_heatmap, load_and_render, generate_demo_heatmap
 
 
 def test_render_coverage_heatmap_output(tmp_path):
@@ -43,3 +43,34 @@ def test_render_coverage_heatmap_output(tmp_path):
     assert result == out_file
     assert os.path.exists(out_file)
     assert os.path.getsize(out_file) > 10000, "Generated heatmap PNG is too small or corrupted"
+    assert os.path.exists(os.path.join(tmp_path, "test_heatmap.npz")), "Companion .npz was not generated"
+
+
+def test_load_and_render_from_npz(tmp_path):
+    """Verify load_and_render can reload saved .npz data and produce equivalent PNG."""
+    npz_file = os.path.join(tmp_path, "run_data.npz")
+    grid = np.zeros((20, 30), dtype=int)
+    grid[5:15, 5:15] = 3
+    np.savez_compressed(
+        npz_file,
+        visited_grid=grid,
+        world_name="cafe",
+        grid_bounds=np.array([-8.0, 8.0, -4.0, 4.0], dtype=np.float32),
+        acr_percent=42.0,
+        steps=150
+    )
+
+    out_png = os.path.join(tmp_path, "reloaded.png")
+    res = load_and_render(npz_file, output_path=out_png, density_mode=True)
+    assert res == out_png
+    assert os.path.exists(out_png)
+    assert os.path.getsize(out_png) > 10000
+
+
+def test_generate_demo_heatmap(tmp_path):
+    """Verify generate_demo_heatmap produces valid visualization for any world."""
+    out_png = os.path.join(tmp_path, "demo_maze.png")
+    res = generate_demo_heatmap(world_name="maze", output_path=out_png, steps=50, acr_target=12.5)
+    assert res == out_png
+    assert os.path.exists(out_png)
+    assert os.path.getsize(out_png) > 10000

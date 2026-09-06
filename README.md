@@ -129,7 +129,20 @@ Verifies that the Quadratic Programming Control Barrier Function (CBF) holds str
 ./run_swarm.sh --dynamic-test --scenario head_on --world cafe --gui
 ```
 
-### 6. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
+### 6. Coverage-Heatmap Renderer (Phase 2 Verification & Phase 3 Visuals)
+Transforms raw `visited_grid` numpy arrays, companion `.npz` run archives, or JSON telemetry files into publication-grade colored PNG visuals with trajectory paths and visit intensity gradients:
+```bash
+# Render coverage heatmap from saved .npz run data or json telemetry
+./run_swarm.sh --render-heatmap docs/heatmaps/warehouse_demo_heatmap.npz --out docs/heatmaps/my_heatmap.png
+
+# Generate a high-resolution visit intensity density heatmap for any world
+./run_swarm.sh --render-heatmap --world warehouse --demo --density
+
+# Standalone CLI execution
+python3 src/mars_swarm/mars_swarm/coverage_heatmap_renderer.py --input path/to/run.npz --output path/to/out.png --dpi 300
+```
+
+### 7. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
 > [!NOTE]
 > Preserved strictly for academic baseline reproduction. MAPPO suffers from penalty-induced freezing in dense obstacle environments.
 ```bash

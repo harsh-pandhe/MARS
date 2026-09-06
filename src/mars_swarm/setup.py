@@ -36,6 +36,7 @@ setup(
             'evaluate_benchmarks = mars_swarm.evaluate_benchmarks:main',
             'sweep_robot_count = mars_swarm.sweep_robot_count:main',
             'dynamic_obstacle_test = mars_swarm.dynamic_obstacle_test:main',
+            'coverage_heatmap_renderer = mars_swarm.coverage_heatmap_renderer:main',
             'semantic_vision = mars_swarm.semantic_vision:main',
             'mars_mcp_server = mars_swarm.mars_mcp_server:main',
         ],

@@ -35,6 +35,7 @@ show_help() {
     echo "  --coverage-demo [N] [--world W] [--robots N] Run Frontier Heuristic (primary exploration engine)"
     echo "  --sweep-robots [--world W|all] [--steps S]   Run multi-world robot count scalability sweep (2, 3, 5, 8 robots)"
     echo "  --dynamic-test [--scenario S] [--world W]    Verify CBF safety against moving dynamic hazards in Gazebo"
+    echo "  --render-heatmap [file] [--world W] [--out]  Render publication-grade coverage heatmap PNG from run data"
     echo "  --benchmark [path]  Run quantitative benchmarking across baselines & stress tests"
     echo "  --resilience <path> Evaluate swarm in GUI and inject failure using robot_killer"
     echo "  --demo              Run random swarm rollout demo in Gazebo GUI"
@@ -334,6 +335,53 @@ case "$1" in
         done
         echo "Running Dynamic Obstacle CBF test (scenario=${SCENARIO}, world=${WORLD})..."
         python3 src/mars_swarm/mars_swarm/dynamic_obstacle_test.py --scenario "${SCENARIO}" --world "${WORLD}" ${GUI_FLAG}
+        ;;
+    --render-heatmap)
+        INPUT_FILE=""
+        OUTPUT_FILE=""
+        WORLD="depot"
+        EXTRA_FLAGS=""
+        shift
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --input|-i)
+                    shift
+                    INPUT_FILE="$1"
+                    ;;
+                --output|-o|--out)
+                    shift
+                    OUTPUT_FILE="$1"
+                    ;;
+                --world|-w)
+                    shift
+                    WORLD="$1"
+                    ;;
+                --density)
+                    EXTRA_FLAGS="${EXTRA_FLAGS} --density"
+                    ;;
+                --demo)
+                    EXTRA_FLAGS="${EXTRA_FLAGS} --demo"
+                    ;;
+                *)
+                    if [ -f "$1" ]; then
+                        INPUT_FILE="$1"
+                    else
+                        WORLD="$1"
+                    fi
+                    ;;
+            esac
+            shift
+        done
+        CMD_ARGS=""
+        if [ ! -z "${INPUT_FILE}" ]; then
+            CMD_ARGS="${CMD_ARGS} --input ${INPUT_FILE}"
+        fi
+        if [ ! -z "${OUTPUT_FILE}" ]; then
+            CMD_ARGS="${CMD_ARGS} --output ${OUTPUT_FILE}"
+        fi
+        CMD_ARGS="${CMD_ARGS} --world ${WORLD} ${EXTRA_FLAGS}"
+        echo "Rendering coverage heatmap (world=${WORLD})..."
+        python3 src/mars_swarm/mars_swarm/coverage_heatmap_renderer.py ${CMD_ARGS}
         ;;
     --test)
         echo "Running full automated test suite with pytest..."
