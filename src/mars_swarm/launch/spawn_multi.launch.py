@@ -88,7 +88,7 @@ def launch_setup(context, *args, **kwargs):
     # 3. Dynamic bridge generator helper to namespace all frame_ids
     from launch_ros.actions import Node
     
-    def make_robot_nodes(namespace, robot_name, x, y, z, yaw):
+    def make_robot_nodes(namespace, robot_name, x, y, z, yaw, robot_type='waffle'):
         config_content = f"""- ros_topic_name: "/clock"
   gz_topic_name: "/clock"
   ros_type_name: "rosgraph_msgs/msg/Clock"
@@ -163,7 +163,11 @@ def launch_setup(context, *args, **kwargs):
         # confirmed to drive correctly. Tradeoff: the visual mesh is now
         # slightly larger than its own collision box, so it may look like it
         # clips into walls/other robots slightly before collision registers.
-        robot_sdf = os.path.join(mars_swarm_share, 'urdf', 'gz_waffle_visual_big.sdf.xacro')
+        if robot_type.lower() in ('pioneer', 'pioneer2dx'):
+            robot_sdf = os.path.join(mars_swarm_share, 'urdf', 'pioneer2dx.sdf.xacro')
+        else:
+            robot_sdf = os.path.join(mars_swarm_share, 'urdf', 'gz_waffle_visual_big.sdf.xacro')
+
         spawn_node = Node(
             package='ros_gz_sim',
             executable='create',
@@ -179,37 +183,22 @@ def launch_setup(context, *args, **kwargs):
         )
         return bridge_node, spawn_node
 
-    # Horizontal line at y=0, all facing south (-1.5708) into open floor. Confirmed-clear
-    # points: (0,0)=0.99 m (probe); (+/-0.5,-0.289) were clear in training (tb2/tb3 roamed
-    # freely). The prior triangle put tb1 at (0,+0.577) INSIDE north furniture AND facing
-    # south straight into tb2/tb3 -> tb1 wedged, 0 movement, -20 collision every episode.
-    # Now teammates sit to each robot's SIDE (0.7 m -> ~0.48 m lidar, no forward block) and
-    # every robot's front (south) is open. theta1 = -1.5708 is unchanged, so the odom
-    # frame / coverage grid / safe_goals stay valid; only positions move. env spawn_poses
-    # and static TFs below match (all relative yaw 0 since all headings equal).
-    bridge_tb1, spawn_tb1 = make_robot_nodes('tb1', 'tb1', '0.00', '0.00', '0.20', '-1.5708')
-    bridge_tb2, spawn_tb2 = make_robot_nodes('tb2', 'tb2', '-0.70', '0.00', '0.20', '-1.5708')
-    bridge_tb3, spawn_tb3 = make_robot_nodes('tb3', 'tb3', '0.70', '0.00', '0.20', '-1.5708')
+    # 4. Determine number of robots to spawn
+    num_robots_str = context.perform_substitution(LaunchConfiguration('num_robots'))
+    multi_str = context.perform_substitution(LaunchConfiguration('multi'))
+    if num_robots_str and num_robots_str.isdigit():
+        num_robots = max(1, min(8, int(num_robots_str)))
+    else:
+        num_robots = 3 if multi_str.lower() == 'true' else 1
 
-    # 4. TF Relay and Static Transforms to link the namespaces under tb1/odom
-    static_tf_tb1_tb2 = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_tb1_tb2',
-        arguments=['--x', '0.0', '--y', '-0.7', '--z', '0.0', '--yaw', '0.0', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb2/odom']
-    )
-    static_tf_tb1_tb3 = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_tb1_tb3',
-        arguments=['--x', '0.0', '--y', '0.7', '--z', '0.0', '--yaw', '0.0', '--frame-id', 'tb1/odom', '--child-frame-id', 'tb3/odom']
-    )
-    tf_relay_node = Node(
-        package='mars_swarm',
-        executable='tf_relay',
-        name='tf_relay',
-        output='screen'
-    )
+    robot_types_str = context.perform_substitution(LaunchConfiguration('robot_types'))
+    robot_types = [t.strip().lower() for t in robot_types_str.split(',') if t.strip()]
+    if not robot_types:
+        robot_types = ['waffle']
+
+    enable_static_tf_str = context.perform_substitution(LaunchConfiguration('enable_static_tf'))
+    enable_static_tf = enable_static_tf_str.lower() == 'true'
+
     # Read the URDF file directly (robot_state_publisher requires URDF XML string, not SDF xacro output)
     urdf_file_path = os.path.join(tb3_sim_share, 'urdf', 'turtlebot3_waffle.urdf')
     try:
@@ -219,54 +208,48 @@ def launch_setup(context, *args, **kwargs):
         print(f"[spawn_multi] Error reading URDF file: {e}")
         robot_desc = ''
 
-    rsp_tb1 = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        namespace='tb1',
-        output='screen',
-        parameters=[{
-            'use_sim_time': True,
-            'robot_description': robot_desc,
-            'frame_prefix': 'tb1/'
-        }]
+    tf_relay_node = Node(
+        package='mars_swarm',
+        executable='tf_relay',
+        name='tf_relay',
+        output='screen'
     )
 
-    rsp_tb2 = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        namespace='tb2',
-        output='screen',
-        parameters=[{
-            'use_sim_time': True,
-            'robot_description': robot_desc,
-            'frame_prefix': 'tb2/'
-        }]
-    )
+    nodes = [gazebo, tf_relay_node]
 
-    rsp_tb3 = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        namespace='tb3',
-        output='screen',
-        parameters=[{
-            'use_sim_time': True,
-            'robot_description': robot_desc,
-            'frame_prefix': 'tb3/'
-        }]
-    )
-    
-    enable_static_tf_str = context.perform_substitution(LaunchConfiguration('enable_static_tf'))
-    enable_static_tf = enable_static_tf_str.lower() == 'true'
-    
-    multi_str = context.perform_substitution(LaunchConfiguration('multi'))
-    multi_mode = multi_str.lower() == 'true'
-    
-    nodes = [gazebo, bridge_tb1, spawn_tb1, tf_relay_node, rsp_tb1]
-    if multi_mode:
-        nodes.extend([bridge_tb2, spawn_tb2, bridge_tb3, spawn_tb3, rsp_tb2, rsp_tb3])
-        if enable_static_tf:
-            nodes.extend([static_tf_tb1_tb2, static_tf_tb1_tb3])
-        
+    # Pre-calculated collision-free horizontal line coordinates at y=0, yaw=-1.5708
+    # Spaced by 0.70m (safe margin > 0.45m inter-agent CBF distance) across all 5 worlds
+    ROBOT_X_OFFSETS = [0.0, -0.7, 0.7, -1.4, 1.4, -2.1, 2.1, -2.8]
+
+    for k in range(num_robots):
+        ns = f'tb{k + 1}'
+        xw = ROBOT_X_OFFSETS[k]
+        rob_type = robot_types[k % len(robot_types)]
+        bridge_node, spawn_node = make_robot_nodes(ns, ns, f'{xw:.2f}', '0.00', '0.20', '-1.5708', robot_type=rob_type)
+        rsp_node = Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            namespace=ns,
+            output='screen',
+            parameters=[{
+                'use_sim_time': True,
+                'robot_description': robot_desc,
+                'frame_prefix': f'{ns}/'
+            }]
+        )
+        nodes.extend([bridge_node, spawn_node, rsp_node])
+
+        # Publish static transform between tb1/odom and tbK/odom
+        # In tb1/odom frame: local_x = -y_world = 0.0, local_y = x_world = xw
+        if k > 0 and enable_static_tf:
+            static_tf = Node(
+                package='tf2_ros',
+                executable='static_transform_publisher',
+                name=f'static_tf_tb1_{ns}',
+                arguments=['--x', '0.0', '--y', f'{xw:.2f}', '--z', '0.0', '--yaw', '0.0', '--frame-id', 'tb1/odom', '--child-frame-id', f'{ns}/odom']
+            )
+            nodes.append(static_tf)
+
     return nodes
 
 def generate_launch_description():
@@ -294,6 +277,8 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument('world', default_value='cafe', description="World SDF to load (without extension): 'cafe', 'warehouse', 'depot', 'office', or 'maze'"))
     ld.add_action(DeclareLaunchArgument('enable_static_tf', default_value='true', description='Whether to enable static TF between robot odom frames'))
     ld.add_action(DeclareLaunchArgument('multi', default_value='true', description='Whether to spawn 3 robots (true) or just 1 (false)'))
+    ld.add_action(DeclareLaunchArgument('num_robots', default_value='', description='Number of robots to spawn (1 to 8, overrides multi)'))
+    ld.add_action(DeclareLaunchArgument('robot_types', default_value='waffle', description='Comma-separated robot types for swarm (e.g. waffle, or waffle,pioneer2dx)'))
     ld.add_action(DeclareLaunchArgument('seed', default_value='42', description='Deterministic PRNG seed for Gazebo physics and sensor noise'))
     
     # Add environment variables

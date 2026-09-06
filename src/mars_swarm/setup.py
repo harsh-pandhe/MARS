@@ -32,6 +32,7 @@ setup(
             'robot_killer = mars_swarm.robot_killer:main',
             'tf_relay = mars_swarm.tf_relay:main',
             'evaluate_benchmarks = mars_swarm.evaluate_benchmarks:main',
+            'sweep_robot_count = mars_swarm.sweep_robot_count:main',
             'semantic_vision = mars_swarm.semantic_vision:main',
             'mars_mcp_server = mars_swarm.mars_mcp_server:main',
         ],

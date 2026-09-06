@@ -135,9 +135,10 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
     total_cells = env.grid_resolution_x * env.grid_resolution_y
     initial_visited = np.sum(env.visited_grid)
     
-    # Trajectory tracking for distance
+    # Trajectory tracking for distance and visualization
     prev_poses = {agent: (0.0, 0.0) for agent in env.possible_agents}
     distances = {agent: 0.0 for agent in env.possible_agents}
+    trajectories = {agent: [] for agent in env.possible_agents}
     
     # Cell occupancy overlap counts
     cell_visit_counts = np.zeros((env.grid_resolution_y, env.grid_resolution_x))
@@ -255,6 +256,7 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
                 if infos[agent].get('status') == 'FAILED':
                     collision_count += 1
                 cx, cy = infos[agent]['x'], infos[agent]['y']
+                trajectories[agent].append((float(cx), float(cy)))
                 
                 # Accumulate distance
                 if steps > 0:
@@ -315,22 +317,25 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         'distance': total_distance,
         'collisions': collision_count,
         'wall_collisions': wall_collision_count,
-        'agent_collisions': agent_collision_count
+        'agent_collisions': agent_collision_count,
+        'trajectories': trajectories,
+        'visited_grid': env.visited_grid.copy(),
+        'obstacle_grid': final_obs_grid
     }
     
     if telemetry_logger is not None:
         telemetry_logger.finalize_and_export(final_results)
         
     return final_results
-def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json=""):
+def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="", num_robots=3, export_heatmap=""):
     print("\n" + "="*50)
-    print(f"      FRONTIER HEURISTIC COVERAGE RUN ({max_steps} STEPS, {world.upper()} WORLD, SEED={seed})      ")
+    print(f"      FRONTIER HEURISTIC COVERAGE RUN ({max_steps} STEPS, {world.upper()} WORLD, {num_robots} ROBOTS, SEED={seed})      ")
     print("="*50 + "\n")
 
-    start_gazebo(headless=not gui, world=world, seed=seed)
+    start_gazebo(headless=not gui, world=world, seed=seed, num_robots=num_robots)
 
-    print("[coverage-demo] Initializing Swarm Environment...")
-    env = PettingZooSwarmEnv(max_steps=max_steps, continuous_exploration=True, world=world)
+    print(f"[coverage-demo] Initializing Swarm Environment ({num_robots} robots)...")
+    env = PettingZooSwarmEnv(num_robots=num_robots, max_steps=max_steps, continuous_exploration=True, world=world)
 
     telemetry_logger = None
     if export_json:
@@ -342,6 +347,23 @@ def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_js
 
     if telemetry_logger and export_json:
         telemetry_logger.finalize_and_export(res, export_path=export_json)
+
+    # Render publication-grade coverage heatmap
+    try:
+        from coverage_heatmap_renderer import render_coverage_heatmap
+        heatmap_file = export_heatmap or f"docs/heatmaps/{world}_coverage_heatmap.png"
+        render_coverage_heatmap(
+            visited_grid=res['visited_grid'],
+            obstacle_grid=res['obstacle_grid'],
+            trajectories=res.get('trajectories'),
+            world_name=world,
+            grid_bounds=env.grid_bounds,
+            acr_percent=res['acr'],
+            steps=res['steps'],
+            output_path=heatmap_file
+        )
+    except Exception as e:
+        print(f"[coverage-demo] WARNING: Failed to render heatmap: {e}")
 
     env.close()
     if gazebo_process:
@@ -369,11 +391,13 @@ def main():
     parser.add_argument('--headless', action='store_true', help="Force headless for --coverage-demo (default is GUI)")
     parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse', 'depot', 'office', 'maze'], help="World for benchmarking/demo: 'cafe', 'warehouse', 'depot', 'office', 'maze'")
     parser.add_argument('--seed', type=int, default=42, help="Deterministic PRNG seed for Gazebo physics, sensors, and repeatable replay")
+    parser.add_argument('--num-robots', type=int, default=3, help="Number of robots to evaluate (1 to 8, default: 3)")
     parser.add_argument('--export-json', type=str, default="", help="Optional filepath for structured run telemetry JSON export")
+    parser.add_argument('--export-heatmap', type=str, default="", help="Optional filepath for coverage heatmap PNG export")
     args = parser.parse_args()
 
     if args.coverage_demo:
-        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world, seed=args.seed, export_json=args.export_json)
+        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world, seed=args.seed, export_json=args.export_json, num_robots=args.num_robots, export_heatmap=args.export_heatmap)
         return
 
     print("\n" + "="*50)
@@ -421,10 +445,10 @@ def main():
             sys.exit(1)
             
     # Start Gazebo
-    start_gazebo(headless=not args.gui, world=args.world, seed=args.seed)
+    start_gazebo(headless=not args.gui, world=args.world, seed=args.seed, num_robots=args.num_robots)
     
-    print(f"[benchmark] Initializing Swarm Environment for world='{args.world}'...")
-    env = PettingZooSwarmEnv(max_steps=150, world=args.world)
+    print(f"[benchmark] Initializing Swarm Environment ({args.num_robots} robots) for world='{args.world}'...")
+    env = PettingZooSwarmEnv(num_robots=args.num_robots, max_steps=150, world=args.world)
     
     # Benchmarking configurations
     scenarios = [

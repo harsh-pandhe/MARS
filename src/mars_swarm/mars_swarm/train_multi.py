@@ -34,7 +34,7 @@ from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 # --- Gazebo Launcher Helpers ---
 gazebo_process = None
 
-def start_gazebo(headless=True, multi=True, world='cafe', seed=42):
+def start_gazebo(headless=True, multi=True, world='cafe', seed=42, num_robots=None):
     global gazebo_process
     import random
     random.seed(seed)
@@ -43,7 +43,15 @@ def start_gazebo(headless=True, multi=True, world='cafe', seed=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    print(f"[train_multi] Starting {'Multi-Robot' if multi else 'Single-Robot'} Gazebo simulation ({world} world, seed={seed}) in background...")
+    # Ensure workspace install directory is in AMENT_PREFIX_PATH
+    workspace_install = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../install/mars_swarm"))
+    if os.path.exists(workspace_install):
+        cur_ament = os.environ.get("AMENT_PREFIX_PATH", "")
+        if workspace_install not in cur_ament:
+            os.environ["AMENT_PREFIX_PATH"] = f"{workspace_install}:{cur_ament}" if cur_ament else workspace_install
+
+    robots_desc = f"{num_robots}-Robot" if num_robots is not None else ('Multi-Robot' if multi else 'Single-Robot')
+    print(f"[train_multi] Starting {robots_desc} Gazebo simulation ({world} world, seed={seed}) in background...")
     cmd = [
         "ros2", "launch", "mars_swarm", "spawn_multi.launch.py",
         f"headless:={str(headless).lower()}",
@@ -51,6 +59,9 @@ def start_gazebo(headless=True, multi=True, world='cafe', seed=42):
         f"world:={world}",
         f"seed:={seed}"
     ]
+    if num_robots is not None:
+        cmd.append(f"num_robots:={num_robots}")
+    kill_stale_processes()
     # Launch in a separate process group so we can terminate the entire tree
     gazebo_process = subprocess.Popen(
         cmd,

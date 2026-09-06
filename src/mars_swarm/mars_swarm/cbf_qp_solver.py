@@ -73,10 +73,12 @@ class FastCBFSolver:
         B_rows = []
         h_rows = []
         
-        # A. LiDAR obstacles (24 sectors from -pi to pi)
+        # A. LiDAR obstacles (24 sectors from 0 to 2*pi in ROS LaserScan convention; beam 0 is forward)
         if lidar_ranges is not None and len(lidar_ranges) > 0:
-            angles = np.linspace(-np.pi, np.pi, len(lidar_ranges))
-            for j in range(len(lidar_ranges)):
+            n_beams = len(lidar_ranges)
+            # Map index j in [0, n_beams) to angle phi_j in [-pi, pi], where j=0 is 0.0 rad (straight forward)
+            angles = np.array([((j * 2.0 * np.pi / n_beams + np.pi) % (2.0 * np.pi)) - np.pi for j in range(n_beams)])
+            for j in range(n_beams):
                 d_j = float(lidar_ranges[j])
                 if d_j > 0.60:
                     continue
@@ -179,9 +181,12 @@ class FastCBFSolver:
             return min(0.0, v_nom), w_nom
 
     def _apply_front_safeguard(self, v_out, lidar_ranges):
-        """Strict physical safeguard: if obstacle is <0.20m directly in front, forward velocity must be <=0.0."""
-        if lidar_ranges is not None and len(lidar_ranges) >= 15:
-            min_front = np.min(lidar_ranges[10:15])
-            if min_front < 0.20:
+        """Strict physical safeguard: if obstacle is <0.24m in the front cone (+/-30 deg), forward velocity must be <=0.0."""
+        if lidar_ranges is not None and len(lidar_ranges) >= 12:
+            # In ROS LaserScan convention, beam 0 is 0 rad (straight forward).
+            # Front cone covers beams [0, 1, 2] (forward-left) and [-1, -2] (forward-right).
+            front_indices = [0, 1, 2, -1, -2]
+            min_front = min([float(lidar_ranges[idx]) for idx in front_indices if abs(idx) < len(lidar_ranges)])
+            if min_front < 0.24:
                 return min(0.0, v_out)
         return v_out

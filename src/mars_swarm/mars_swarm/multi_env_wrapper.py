@@ -159,10 +159,18 @@ class SwarmNode(Node):
 class PettingZooSwarmEnv(ParallelEnv):
     metadata = {'render_modes': ['human'], "name": "mars_swarm_v0"}
 
-    def __init__(self, agents=['tb1', 'tb2', 'tb3'], max_steps=300, continuous_exploration=False, world='cafe'):
+    def __init__(self, agents=None, num_robots=None, max_steps=300, continuous_exploration=False, world='cafe'):
         super().__init__()
-        self.agents = agents
-        self.possible_agents = agents[:]
+        if agents is None:
+            if num_robots is not None:
+                agents = [f'tb{i}' for i in range(1, int(num_robots) + 1)]
+            else:
+                agents = ['tb1', 'tb2', 'tb3']
+        elif num_robots is not None and int(num_robots) != len(agents):
+            agents = [f'tb{i}' for i in range(1, int(num_robots) + 1)]
+        self.num_robots = len(agents)
+        self.agents = list(agents)
+        self.possible_agents = list(agents)
         self.max_steps = max_steps
         self.continuous_exploration = continuous_exploration
         self.world = world
@@ -304,11 +312,11 @@ class PettingZooSwarmEnv(ParallelEnv):
         # Horizontal line (in tb1 odom frame): teammates 0.7 m to tb1's sides, all facing
         # the same way (relative yaw 0). Keeps tb1's front open so it can move off spawn.
         # Must stay consistent with spawn_multi.launch.py physical spawn + static TFs.
-        self.spawn_poses = {
-            'tb1': (0.0, 0.0, 0.0),
-            'tb2': (0.0, -0.7, 0.0),
-            'tb3': (0.0, 0.7, 0.0)
-        }
+        ROBOT_X_OFFSETS = [0.0, -0.7, 0.7, -1.4, 1.4, -2.1, 2.1, -2.8]
+        self.spawn_poses = {}
+        for idx, agent in enumerate(self.possible_agents):
+            xw = ROBOT_X_OFFSETS[idx] if idx < len(ROBOT_X_OFFSETS) else -(idx * 0.7)
+            self.spawn_poses[agent] = (0.0, xw, 0.0)
         self.odom_offsets = {
             agent: (0.0, 0.0, 0.0) for agent in agents
         }

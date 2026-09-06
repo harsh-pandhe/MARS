@@ -40,6 +40,7 @@ show_help() {
     echo "  --record <path>     Evaluate trained policy (headless) and record ROS bag of odom/scans"
     echo "  --benchmark [path]  Run quantitative benchmarking across baselines & stress tests, and generate plots"
     echo "  --coverage-demo [N] [--world cafe|warehouse] Run Frontier Heuristic for N steps (default 1200) to maximize area coverage in Gazebo GUI + RViz"
+    echo "  --sweep-robots [--world W] [--steps S] Run robot count scalability sweep (2, 3, 5, 8 robots)"
     echo "  --slam              Run SLAM Toolbox mapping on tb1 (with Gazebo GUI & RViz)"
     echo "  --nav               Run Nav2 Stack on the saved sandbox map for all 3 robots (with Gazebo GUI & RViz)"
     echo "  --test              Run full automated unit and regression test suite"
@@ -242,6 +243,8 @@ case "$1" in
         MAX_STEPS="1200"
         HEADLESS_FLAG=""
         WORLD="cafe"
+        NUM_ROBOTS=""
+        HEATMAP_ARG=""
         shift
         while [ "$#" -gt 0 ]; do
             case "$1" in
@@ -252,6 +255,14 @@ case "$1" in
                     shift
                     WORLD="$1"
                     ;;
+                --robots)
+                    shift
+                    NUM_ROBOTS="--num-robots $1"
+                    ;;
+                --heatmap)
+                    shift
+                    HEATMAP_ARG="--export-heatmap $1"
+                    ;;
                 *)
                     MAX_STEPS="$1"
                     ;;
@@ -259,7 +270,40 @@ case "$1" in
             shift
         done
         echo "Running Frontier Heuristic coverage demo (world=${WORLD}, Gazebo GUI + RViz)..."
-        python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" --world "${WORLD}" ${HEADLESS_FLAG}
+        python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" --world "${WORLD}" ${HEADLESS_FLAG} ${NUM_ROBOTS} ${HEATMAP_ARG}
+        ;;
+    --sweep-robots)
+        WORLD="depot"
+        MAX_STEPS="300"
+        COUNTS=""
+        GUI_FLAG=""
+        shift
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --world)
+                    shift
+                    WORLD="$1"
+                    ;;
+                --steps)
+                    shift
+                    MAX_STEPS="$1"
+                    ;;
+                --gui)
+                    GUI_FLAG="--gui"
+                    ;;
+                --counts)
+                    shift
+                    COUNTS="$1"
+                    ;;
+            esac
+            shift
+        done
+        EXTRA_ARGS=""
+        if [ ! -z "${COUNTS}" ]; then
+            EXTRA_ARGS="--robot-counts ${COUNTS}"
+        fi
+        echo "Running robot count scalability sweep (world=${WORLD}, steps=${MAX_STEPS})..."
+        python3 src/mars_swarm/mars_swarm/sweep_robot_count.py --world "${WORLD}" --max-steps "${MAX_STEPS}" ${GUI_FLAG} ${EXTRA_ARGS}
         ;;
     --test)
         echo "Running full automated test suite with pytest..."

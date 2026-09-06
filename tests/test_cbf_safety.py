@@ -27,7 +27,8 @@ def apply_cbf_standalone(obs, v_nom, w_nom):
         return (u[0] - v_nom)**2 + 0.05 * (u[1] - w_nom)**2 + P_slack * (u[2]**2)
         
     cons = []
-    angles = np.linspace(-np.pi, np.pi, 24)
+    n_beams = 24
+    angles = np.array([((j * 2.0 * np.pi / n_beams + np.pi) % (2.0 * np.pi)) - np.pi for j in range(n_beams)])
     for j in range(24):
         d_j = lidar_ranges[j]
         if d_j > 0.6:
@@ -79,7 +80,8 @@ def apply_cbf_standalone(obs, v_nom, w_nom):
     if res.success:
         v_out = float(res.x[0])
         w_out = float(res.x[1])
-        if np.min(lidar_ranges[10:15]) < 0.20:
+        min_front = min(lidar_ranges[0], lidar_ranges[1], lidar_ranges[-1], lidar_ranges[-2])
+        if min_front < 0.24:
             v_out = min(0.0, v_out)
         return v_out, w_out
     else:
@@ -115,9 +117,9 @@ def test_cbf_front_obstacle_braking():
     obs = np.ones(46, dtype=np.float32) * 3.0
     obs[28:46] = 10.0
     
-    # 24 sectors from -pi to pi; index 11/12 corresponds to forward (phi ~ 0)
-    obs[11] = 0.24
-    obs[12] = 0.24
+    # In ROS LaserScan convention, beam 0 / 23 corresponds to forward (phi ~ 0)
+    obs[0] = 0.24
+    obs[23] = 0.24
     
     v_safe, w_safe = apply_cbf_standalone(obs, v_nom=0.22, w_nom=0.0)
     assert v_safe < 0.22
@@ -138,8 +140,8 @@ def test_cbf_reverse_escape_allowed():
     """When wedged against an obstacle, reverse escape command (v_nom < 0) must NOT be blocked."""
     obs = np.ones(46, dtype=np.float32) * 3.0
     obs[28:46] = 10.0
-    obs[11] = 0.15  # Obstacle directly in front
-    obs[12] = 0.15
+    obs[0] = 0.15  # Obstacle directly in front
+    obs[23] = 0.15
     
     v_safe, w_safe = apply_cbf_standalone(obs, v_nom=-0.12, w_nom=0.6)
     # Must allow negative velocity to back away from the wall
@@ -160,14 +162,14 @@ def test_fast_cbf_solver_correctness_and_speed():
     assert np.isclose(w, 0.10, atol=1e-2)
     
     # 2. Obstacle braking
-    lidar[11] = 0.22
-    lidar[12] = 0.22
+    lidar[0] = 0.22
+    lidar[23] = 0.22
     v, w = solver.solve(0.22, 0.0, lidar)
     assert v < 0.22
     
     # 3. Reverse escape
-    lidar[11] = 0.15
-    lidar[12] = 0.15
+    lidar[0] = 0.15
+    lidar[23] = 0.15
     v, w = solver.solve(-0.12, 0.6, lidar)
     assert v < 0.0
     
