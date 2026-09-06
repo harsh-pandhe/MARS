@@ -1,6 +1,12 @@
 # MARS: Multi-Agent Robot Swarm Navigation & Area Coverage
 
-MARS (Multi-Agent Robot Swarm) is a state-of-the-art framework for cooperative area coverage and navigation utilizing a swarm of homogeneous TurtleBot3 Waffle robots. The system is built on **ROS 2 Jazzy**, **Gazebo Sim**, **PettingZoo**, and **Ray RLlib (MAPPO)**.
+> [!CAUTION]
+> **ARCHITECTURAL DECISION: MAPPO IS FORMALLY DEPRECATED ("DOES NOT WORK")**
+> Multi-Agent PPO (MAPPO) was rigorously benchmarked across 50 empirical trials (10 episodes per condition) and **fails to achieve viable area coverage in dense obstacle environments**. Due to sparse exploration rewards vs. dense collision penalties, MAPPO collapses into penalty-avoidance policy freezing: agents hover in place, traveling an average of only **1.5 m** per episode and achieving a median ACR of **14.5%** — trailing even pure Random Walk (**29.6%**) and the Frontier Heuristic (**38.6%**).
+> 
+> **Decision**: MAPPO is formally marked **DOES NOT WORK** and deprecated from active development. The RLlib training pipeline is frozen and preserved strictly as an academic baseline / negative result. **All active exploration, multi-robot scalability sweeps ($N \in \{2, 3, 5, 8\}$), and multi-world benchmarks officially standardize on the Decentralized Frontier Heuristic (Dynamic Voronoi + A* + Behavior Tree + Control Barrier Functions).** Do not allocate further engineering budget to MAPPO reward shaping.
+
+MARS (Multi-Agent Robot Swarm) is a high-performance framework for cooperative area coverage, autonomous exploration, and safety-critical navigation across heterogeneous swarms (TurtleBot3 Waffle and Pioneer 2DX). Built on **ROS 2 Jazzy**, **Gazebo Sim (Harmonic)**, and **PettingZoo**.
 
 ```mermaid
 graph TD
@@ -9,18 +15,17 @@ graph TD
         Bridge <--> Node[SwarmNode]
     end
 
-    subgraph PettingZoo Wrapper
-        Node --> |Raw LaserScan & Odom| Obs[Observation Processors]
-        Obs --> |32-dim Feature Vector| Env[PettingZoo ParallelEnv]
-        Env --> |Cooperative Reward| Rwd[Reward Engine]
+    subgraph Decentralized Swarm Engine [Primary]
+        Node --> |LaserScan & Odom| DF[Scan-Matching Localizer]
+        DF --> |Corrected Pose| Voronoi[Dynamic Voronoi CBAA Allocator]
+        Voronoi --> |Frontier Targets| BT[py_trees Behavior Tree & A*]
+        BT --> |Nominal v, w| CBF[Fast Micro-QP CBF Solver]
+        CBF --> |Safe v, w| Bridge
     end
 
-    subgraph Ray RLlib Training
-        Env <--> MAPPO[MAPPO Trainer / Shared Policy]
-    end
-
-    subgraph Swarm Resilience
-        Killer[Robot Killer Node] --> |Hijack /tbX/cmd_vel| GZ
+    subgraph MARL Pipeline [Deprecated Baseline]
+        Node --> Obs[PettingZoo Obs 46-dim]
+        Obs --> MAPPO[Ray RLlib MAPPO Critic]
     end
 ```
 
@@ -71,63 +76,57 @@ source install/setup.bash
 
 ## How to Run (Unified Command Runner)
 
-We provide a unified launcher script `run_swarm.sh` to automate workspace sourcing, package building, node execution, failure injection, and ROS recording.
+We provide a unified launcher script `run_swarm.sh` to automate workspace sourcing, package building, simulation execution, and telemetry export.
 
-### 1. Launch Swarm Random Demo (with GUI)
-To visualize the multi-robot setup and random movement in the Gazebo sandbox:
+### 1. Autonomous Area Coverage Demo (Frontier Heuristic + CBF, GUI)
+Runs the swarm exploring any world (`cafe`, `warehouse`, `depot`, `office`, `maze`) using the decentralized frontier heuristic (A* + CBF + Behavior Tree) for a configurable step budget (default 1200 steps), automatically exporting a publication-grade coverage heatmap PNG:
 ```bash
-./run_swarm.sh --demo
-```
-
-### 1a. One-Command Area Coverage Demo (Frontier Heuristic, GUI)
-Runs all 3 robots exploring the cafe world with a nearest-unvisited-cell frontier heuristic (no trained policy required) for up to 1200 steps, then saves a coverage heatmap plot. This is the most reliable single-command way to see high-coverage swarm exploration end to end:
-```bash
+# Default 3-robot run in cafe world with Gazebo GUI + RViz
 ./run_swarm.sh --coverage-demo
-```
-Prints final area coverage % and saves a heatmap to `./ros_bags/coverage_plot_<timestamp>.png`.
 
-### 2. Multi-Agent MAPPO Training (Headless)
-To start distributed multi-agent training with Ray RLlib and PyTorch:
+# Multi-world or heterogeneous robot swarm (Waffle + Pioneer 2DX)
+./run_swarm.sh --coverage-demo 1200 --world depot --robots 5 --heatmap docs/heatmaps/depot_heatmap.png
+./run_swarm.sh --coverage-demo 300 --world cafe --robots 2 --types "waffle,pioneer2dx"
+```
+
+### 2. Swarm Scalability Sweep Across Robot Counts & Worlds
+Runs automated, headless scalability sweeps across varying swarm sizes ($N \in \{2, 3, 5, 8\}$) in isolated subprocesses with automatic result caching:
 ```bash
-./run_swarm.sh --train
+# Sweep robot counts on a specific world
+./run_swarm.sh --sweep-robots --world depot --steps 300 --counts "2 3 5 8"
+
+# Grand sweep across all 5 benchmark worlds
+./run_swarm.sh --sweep-robots --world all --steps 200 --counts "2 3 5 8"
 ```
 
-### 3. Policy Checkpoint Evaluation
-To run greedy evaluation episodes using a saved training checkpoint (continuous exploration up to 1200 steps per episode). Coverage quality depends on how well-trained the checkpoint is — for a reliable high-coverage demo independent of policy quality, use `--coverage-demo` above instead. Optionally pass an episode count (default 5):
-* **Headless Mode:**
-  ```bash
-  ./run_swarm.sh --evaluate ./checkpoints 1
-  ```
-* **Visual Mode (Gazebo GUI):**
-  ```bash
-  ./run_swarm.sh --play ./checkpoints 1
-  ```
-Each episode prints final area coverage % and saves a coverage heatmap plot to `./ros_bags/coverage_plot_<timestamp>.png`.
+### 3. Quantitative Baseline Benchmarking Suite
+To benchmark exploration performance across control baselines (Random Walk, Frontier Heuristic, and the deprecated MAPPO policy):
+```bash
+# Benchmark control baselines (Random Walk & Frontier Heuristic)
+./run_swarm.sh --benchmark --world cafe
 
-### 4. Swarm Resilience & Failure Injection Test
-To evaluate the swarm's self-healing and adaptation capabilities when a robot suddenly fails:
+# Benchmark all controllers including MAPPO checkpoint
+./run_swarm.sh --benchmark ./checkpoints --world cafe
+```
+
+### 4. Swarm Resilience & Fault-Tolerant Failure Injection
+To evaluate the swarm's self-healing adaptation when a robot experiences sudden hardware failure:
 ```bash
 ./run_swarm.sh --resilience ./checkpoints
 ```
-*This command runs the policy evaluation in the Gazebo GUI and automatically triggers the `robot_killer` failure injection node after 18 seconds. You can visually observe the remaining active robots dynamically taking over the navigation duties of the disabled robot.*
+*Triggers the `robot_killer` failure injection node after 18 seconds. Surviving robots dynamically re-partition remaining frontiers to maintain coverage.*
 
-### 5. Record ROS 2 Bags
-To record sensor data and odom profiles during evaluation:
+### 5. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
+> [!NOTE]
+> Preserved strictly for academic baseline reproduction. MAPPO suffers from penalty-induced freezing in dense obstacle environments.
 ```bash
-./run_swarm.sh --record ./checkpoints
-```
-*This records a ROS 2 bag containing namespaced `/tbX/odom` and `/tbX/scan` topics for offline analysis.*
+# Train MAPPO policy with Ray RLlib and PyTorch (headless)
+./run_swarm.sh --train
 
-### 6. Quantitative Benchmarking & Plotting
-To benchmark your policy against standard baseline control groups (Random Walk and Frontier Heuristic) under noise/failures, run:
-```bash
-# Evaluate only Random Walk & Heuristic control baselines
-./run_swarm.sh --benchmark
-
-# Evaluate full suite including your trained MAPPO policy checkpoint
-./run_swarm.sh --benchmark ./checkpoints
+# Evaluate trained checkpoint (headless or Gazebo GUI)
+./run_swarm.sh --evaluate ./checkpoints
+./run_swarm.sh --play ./checkpoints
 ```
-This runs evaluation episodes under nominal, sensor noise (Gaussian noise added to Lidar scan observations), and agent failure conditions. It outputs summary stats (Area Coverage Rate, overlap redundancy, distance traveled) and saves a comparison box-and-whisker plot to `./checkpoints/benchmark_results.png`.
 
 ---
 
