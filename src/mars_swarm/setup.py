@@ -35,6 +35,7 @@ setup(
             'tf_relay = mars_swarm.tf_relay:main',
             'evaluate_benchmarks = mars_swarm.evaluate_benchmarks:main',
             'sweep_robot_count = mars_swarm.sweep_robot_count:main',
+            'dynamic_obstacle_test = mars_swarm.dynamic_obstacle_test:main',
             'semantic_vision = mars_swarm.semantic_vision:main',
             'mars_mcp_server = mars_swarm.mars_mcp_server:main',
         ],

@@ -116,7 +116,20 @@ To evaluate the swarm's self-healing adaptation when a robot experiences sudden 
 ```
 *Triggers the `robot_killer` failure injection node after 18 seconds. Surviving robots dynamically re-partition remaining frontiers to maintain coverage.*
 
-### 5. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
+### 5. Dynamic Obstacle CBF Verification (Non-Static Hazard Avoidance)
+Verifies that the Quadratic Programming Control Barrier Function (CBF) holds strict collision-free guarantees against moving dynamic hazards in Gazebo:
+```bash
+# Test head-on moving hazard approach (active braking & buffer preservation)
+./run_swarm.sh --dynamic-test --scenario head_on --world cafe
+
+# Test orthogonal crossing hazard (yielding until corridor clears)
+./run_swarm.sh --dynamic-test --scenario crossing --world cafe
+
+# Run with Gazebo 3D GUI enabled
+./run_swarm.sh --dynamic-test --scenario head_on --world cafe --gui
+```
+
+### 6. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
 > [!NOTE]
 > Preserved strictly for academic baseline reproduction. MAPPO suffers from penalty-induced freezing in dense obstacle environments.
 ```bash

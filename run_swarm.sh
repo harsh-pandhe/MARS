@@ -34,6 +34,7 @@ show_help() {
     echo "Options:"
     echo "  --coverage-demo [N] [--world W] [--robots N] Run Frontier Heuristic (primary exploration engine)"
     echo "  --sweep-robots [--world W|all] [--steps S]   Run multi-world robot count scalability sweep (2, 3, 5, 8 robots)"
+    echo "  --dynamic-test [--scenario S] [--world W]    Verify CBF safety against moving dynamic hazards in Gazebo"
     echo "  --benchmark [path]  Run quantitative benchmarking across baselines & stress tests"
     echo "  --resilience <path> Evaluate swarm in GUI and inject failure using robot_killer"
     echo "  --demo              Run random swarm rollout demo in Gazebo GUI"
@@ -309,6 +310,30 @@ case "$1" in
         fi
         echo "Running robot count scalability sweep (world=${WORLD}, steps=${MAX_STEPS})..."
         python3 src/mars_swarm/mars_swarm/sweep_robot_count.py --world "${WORLD}" --max-steps "${MAX_STEPS}" ${GUI_FLAG} ${EXTRA_ARGS}
+        ;;
+    --dynamic-test)
+        SCENARIO="head_on"
+        WORLD="cafe"
+        GUI_FLAG=""
+        shift
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --gui)
+                    GUI_FLAG="--gui"
+                    ;;
+                --world)
+                    shift
+                    WORLD="$1"
+                    ;;
+                --scenario)
+                    shift
+                    SCENARIO="$1"
+                    ;;
+            esac
+            shift
+        done
+        echo "Running Dynamic Obstacle CBF test (scenario=${SCENARIO}, world=${WORLD})..."
+        python3 src/mars_swarm/mars_swarm/dynamic_obstacle_test.py --scenario "${SCENARIO}" --world "${WORLD}" ${GUI_FLAG}
         ;;
     --test)
         echo "Running full automated test suite with pytest..."

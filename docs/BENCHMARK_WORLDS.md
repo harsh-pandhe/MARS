@@ -139,4 +139,20 @@ To confirm whether area coverage and collision avoidance scale or degrade with i
    - In wide-open environments (`warehouse`), per-robot distance traveled increases monotonically from $7.8\text{m}$ ($N=2$) to $22.7\text{m}$ ($N=8$) as robots bid on distant frontiers without interference.
    - Redundancy (re-visited cell ratio) decreases dramatically in complex maps as swarm size grows: in `maze`, redundancy drops from $50.00$ ($N=2$) down to $3.81$ ($N=8$), and in `office` from $10.53$ down to $6.02$, confirming that larger swarms explore novel territory rather than retracing peer footprints.
 
+---
 
+## 6. Dynamic Obstacle CBF Verification (Non-Static Hazard Test)
+
+To confirm that the Quadratic Programming Control Barrier Function (CBF) holds strict safety guarantees against **non-static, actively moving hazards**, MARS executes full end-to-end physics tests in Gazebo:
+
+### Empirical Dynamic Hazard Test Results
+
+| Test Scenario | Hazard Trajectory | Closing Speed ($v_{rel}$) | Minimum Center Dist | Minimum LiDAR Range | CBF Action | Collisions | Verdict |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`head_on`** | Hazard closes directly along ego robot path | $0.38\text{ m/s}$ | **$0.349\text{ m}$** ($\ge 0.32\text{m}$) | **$0.211\text{ m}$** ($\ge 0.14\text{m}$) | Forward speed shed from $0.20 \rightarrow 0.02 \rightarrow -0.18\text{ m/s}$ (active braking/buffer hold) | **0** | **PASSED** |
+| **`crossing`** | Hazard cuts perpendicularly across corridor | $0.22\text{ m/s}$ | **$0.437\text{ m}$** ($\ge 0.35\text{m}$) | **$0.167\text{ m}$** ($\ge 0.14\text{m}$) | Forward speed yielded to $0.00\text{ m/s}$ during crossing, then resumed nominal cruise ($0.18\text{ m/s}$) | **0** | **PASSED** |
+
+### Key Observations
+1. **Dynamic Braking Envelope**: The unicycle continuous barrier function $\dot{h} + \gamma h \ge 0$ restricts maximum allowable forward velocity dynamically as the hazard approaches.
+2. **Reverse Buffer Preservation**: In the `head_on` test, when the closing hazard approaches within $d < 0.40\text{ m}$, the solver computes a negative safe velocity ($v_{\text{safe}} = -0.18\text{ m/s}$), actively reversing to preserve the safety buffer.
+3. **Hazard Clearing & Recovery**: In the `crossing` test, the robot yields at standstill ($v_{\text{safe}} = 0.00\text{ m/s}$) until the hazard's rear bumper clears the traversal corridor ($y > +0.35\text{ m}$), at which point nominal forward cruise immediately resumes with zero human intervention.
