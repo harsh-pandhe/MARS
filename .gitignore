@@ -35,6 +35,7 @@ swarm_record_*/
 *.mcap
 *.png
 !checkpoints/benchmark_results.png
+!docs/heatmaps/*.png
 *.jpg
 *.jpeg
 *.webp
@@ -52,6 +53,7 @@ swarm_record_*/
 checkpoints/*
 !checkpoints/run_summary.json
 !checkpoints/benchmark_results.png
+!checkpoints/*_extended_summary.json
 checkpoints/*.tfevents*
 .pytest_cache/
 .gemini/

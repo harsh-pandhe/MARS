@@ -70,11 +70,40 @@ Similar to the warehouse world (where coverage climbed from 56.0% at 12,000 step
 | :--- | :---: | :---: | :---: | :--- |
 | **`cafe`** | 56.0% | 56.0% (12,000 steps) | ~600 steps | 44% unreachable cells behind sealed furniture. |
 | **`warehouse`** | 56.0% (at 12k) | **100.0%** (24,000 steps) | 8,500 steps | Step-starved at 12k; 100% free space reachable. |
-| **`office`** | 44.1% | ~45-50% (estimated) | ~1,200–1,500 steps | Room partition walls & doorways. Zero collisions recorded. |
-| **`depot`** | 32.8% | ~40-45% (estimated) | ~2,500+ steps | Boxset obstacles and central pillar perimeter loops. |
+| **`office`** | 44.1% | **98.3%** (3,500 steps) | ~3,000 steps | Narrow doorways (<0.9m) into suites required sequential traversal; step-starved at 1,200 steps. Zero collisions (wall & agent). |
+| **`depot`** | 32.8% | **85.7%** (3,500 steps) | ~2,800 steps | Step-starved at 1,200 steps; remaining ~14.3% consists of impassable boxsets, structural columns, and steel staircase. |
 | **`maze`** | 9.1% | **17.1%** (4,000 steps) | ~3,900 steps | Physical corridor ratio: $\sim 17.1\%$ of the $64\text{m} \times 11\text{m}$ bounding envelope is free corridor space; remainder is solid labyrinth walls. |
 
-### Maze 4,000-Step Deep Infiltration Analysis
+### Extended Horizon Deep Infiltration Analysis
+
+#### Depot 3,500-Step Deep Exploration Analysis
+- **Initial Run (1,200 Steps)**: **32.8% ACR**, $100.1\text{m}$ distance, 3,144 wall collisions. Step-starved.
+- **Extended Run (3,500 Steps)**: **85.7% ACR**, **$180.47\text{m}$** distance, 477 wall collisions (84.8% reduction), **0 agent collisions**, redundancy $62.13$.
+- **Trajectory Progression**:
+  - Step 1,000: 28.9% ACR
+  - Step 1,500: 33.7% ACR
+  - Step 2,000: 44.5% ACR (breaking past central boxset cluster)
+  - Step 2,250: 60.0% ACR (rapid expansion into open mezzanine corridors)
+  - Step 2,500: 83.0% ACR
+  - Step 2,800: 85.1% ACR (saturation reached)
+  - Step 3,500: 85.7% ACR (final ceiling)
+- **Ceiling Verdict**: Depot was heavily step-starved at 1,200 steps (32.8%). The swarm required ~1,800 steps to clear inner boxset corridors before surging outward to discover the remaining perimeter floor. The true accessible free-space ceiling is **85.7%** (14.3% physical obstacle occupancy).
+- **Companion Heatmap**: [`docs/heatmaps/depot_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/depot_extended_heatmap.png).
+
+#### Office 3,500-Step Multi-Room Infiltration Analysis
+- **Initial Run (1,200 Steps)**: **44.1% ACR**, $108.68\text{m}$ distance, 0 collisions. Step-starved.
+- **Extended Run (3,500 Steps)**: **98.3% ACR**, **$376.69\text{m}$** distance, **0 wall collisions**, **0 agent collisions**, redundancy $12.30$.
+- **Trajectory Progression**:
+  - Step 1,000: 48.4% ACR
+  - Step 1,500: 62.0% ACR (entering lateral office partitions)
+  - Step 2,000: 73.7% ACR (clearing upper executive suites)
+  - Step 2,500: 88.9% ACR (infiltrating southern conference zones)
+  - Step 3,000: 97.0% ACR (clearing residual corners)
+  - Step 3,500: 98.3% ACR (near-complete floor saturation)
+- **Ceiling Verdict**: Contrary to earlier assumptions that drywall partitions and narrow doorways would cap reachable space around ~45-50%, the swarm achieved **98.3% ACR** under extended budget with **flawless safety** (0 wall and 0 agent collisions across $376.7\text{m}$). The 44.1% initial result was 100% step-starvation caused by the time needed for agents to sequentially discover and negotiate doorway bottlenecks.
+- **Companion Heatmap**: [`docs/heatmaps/office_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/office_extended_heatmap.png).
+
+#### Maze 4,000-Step Deep Infiltration Analysis
 - **Initial Run (1,200 Steps)**: **9.1% ACR**, $99.36\text{m}$ distance, `tb3` reached $y \approx 28.3\text{m}$ (halfway through the 64m maze). Step-starved.
 - **Extended Run (4,000 Steps)**: **17.1% ACR**, **$257.02\text{m}$** distance, 852 collisions (847 wall, 6 agent), redundancy $38.34$.
 - **Trajectory Progression**:
