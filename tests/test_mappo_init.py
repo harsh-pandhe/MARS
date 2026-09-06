@@ -91,8 +91,3 @@ def test_mappo_rllib_training_step():
     assert "env_runners" in result or "episode_reward_mean" in result
     algo.stop()
     ray.shutdown()
-
-    # Ensure Ray is fully stopped before Python interpreter exit to prevent
-    # SIGABRT from Ray C++ worker thread cleanup conflicting with rclpy atexit.
-    import atexit
-    atexit.register(lambda: ray.shutdown() if ray.is_initialized() else None)

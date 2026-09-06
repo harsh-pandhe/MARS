@@ -54,6 +54,7 @@ checkpoints/*
 !checkpoints/run_summary.json
 !checkpoints/benchmark_results.png
 !checkpoints/*_extended_summary.json
+!checkpoints/mappo_multiworld_comparison.json
 checkpoints/*.tfevents*
 .pytest_cache/
 .gemini/
