@@ -49,7 +49,7 @@
         <pose>0 0 0.04 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/pioneer 2dx/3/files/meshes/chassis.dae</uri>
+            <uri>package://mars_swarm/models/pioneer2dx/meshes/chassis.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -236,7 +236,7 @@
         <visualize>false</visualize>
         <update_rate>10</update_rate>
         <topic>$(arg namespace)/scan</topic>
-        <gz_frame_id>$(arg namespace)/base_scan</gz_frame_id>
+        <gz_frame_id>base_scan</gz_frame_id>
         <ray>
           <scan>
             <horizontal>
@@ -283,8 +283,8 @@
       <topic>$(arg namespace)/cmd_vel</topic>
       <odom_topic>$(arg namespace)/odom</odom_topic>
       <tf_topic>$(arg namespace)/tf</tf_topic>
-      <frame_id>$(arg namespace)/odom</frame_id>
-      <child_frame_id>$(arg namespace)/base_footprint</child_frame_id>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
       <odom_publish_frequency>30</odom_publish_frequency>
     </plugin>
 

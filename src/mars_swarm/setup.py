@@ -18,6 +18,8 @@ setup(
         (os.path.join('share', package_name, 'rviz'), glob(os.path.join('rviz', '*.rviz'))),
         (os.path.join('share', package_name, 'worlds'), glob(os.path.join('worlds', '*.sdf'))),
         (os.path.join('share', package_name, 'urdf'), glob(os.path.join('urdf', '*.xacro'))),
+        (os.path.join('share', package_name, 'models', 'pioneer2dx'), glob(os.path.join('models', 'pioneer2dx', '*.*'))),
+        (os.path.join('share', package_name, 'models', 'pioneer2dx', 'meshes'), glob(os.path.join('models', 'pioneer2dx', 'meshes', '*.*'))),
         (os.path.join('share', package_name, 'meshes', 'turtlebot3_burger'), glob(os.path.join('meshes', 'turtlebot3_burger', '*.stl'))),
     ],
     install_requires=['setuptools'],

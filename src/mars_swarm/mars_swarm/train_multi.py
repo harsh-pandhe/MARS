@@ -34,7 +34,7 @@ from ray.rllib.algorithms.ppo.ppo_torch_policy import PPOTorchPolicy
 # --- Gazebo Launcher Helpers ---
 gazebo_process = None
 
-def start_gazebo(headless=True, multi=True, world='cafe', seed=42, num_robots=None):
+def start_gazebo(headless=True, multi=True, world='cafe', seed=42, num_robots=None, robot_types=None):
     global gazebo_process
     import random
     random.seed(seed)
@@ -51,6 +51,8 @@ def start_gazebo(headless=True, multi=True, world='cafe', seed=42, num_robots=No
             os.environ["AMENT_PREFIX_PATH"] = f"{workspace_install}:{cur_ament}" if cur_ament else workspace_install
 
     robots_desc = f"{num_robots}-Robot" if num_robots is not None else ('Multi-Robot' if multi else 'Single-Robot')
+    if robot_types:
+        robots_desc += f" ({robot_types})"
     print(f"[train_multi] Starting {robots_desc} Gazebo simulation ({world} world, seed={seed}) in background...")
     cmd = [
         "ros2", "launch", "mars_swarm", "spawn_multi.launch.py",
@@ -61,6 +63,8 @@ def start_gazebo(headless=True, multi=True, world='cafe', seed=42, num_robots=No
     ]
     if num_robots is not None:
         cmd.append(f"num_robots:={num_robots}")
+    if robot_types is not None:
+        cmd.append(f"robot_types:={robot_types}")
     kill_stale_processes()
     # Launch in a separate process group so we can terminate the entire tree
     gazebo_process = subprocess.Popen(

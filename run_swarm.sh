@@ -245,6 +245,7 @@ case "$1" in
         WORLD="cafe"
         NUM_ROBOTS=""
         HEATMAP_ARG=""
+        ROBOT_TYPES_ARG=""
         shift
         while [ "$#" -gt 0 ]; do
             case "$1" in
@@ -259,6 +260,10 @@ case "$1" in
                     shift
                     NUM_ROBOTS="--num-robots $1"
                     ;;
+                --types|--robot-types)
+                    shift
+                    ROBOT_TYPES_ARG="--robot-types $1"
+                    ;;
                 --heatmap)
                     shift
                     HEATMAP_ARG="--export-heatmap $1"
@@ -270,7 +275,7 @@ case "$1" in
             shift
         done
         echo "Running Frontier Heuristic coverage demo (world=${WORLD}, Gazebo GUI + RViz)..."
-        python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" --world "${WORLD}" ${HEADLESS_FLAG} ${NUM_ROBOTS} ${HEATMAP_ARG}
+        python3 src/mars_swarm/mars_swarm/evaluate_benchmarks.py --coverage-demo --max-steps "${MAX_STEPS}" --world "${WORLD}" ${HEADLESS_FLAG} ${NUM_ROBOTS} ${HEATMAP_ARG} ${ROBOT_TYPES_ARG}
         ;;
     --sweep-robots)
         WORLD="depot"

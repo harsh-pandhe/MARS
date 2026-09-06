@@ -327,12 +327,14 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         telemetry_logger.finalize_and_export(final_results)
         
     return final_results
-def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="", num_robots=3, export_heatmap=""):
+def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="", num_robots=3, export_heatmap="", robot_types=None):
     print("\n" + "="*50)
     print(f"      FRONTIER HEURISTIC COVERAGE RUN ({max_steps} STEPS, {world.upper()} WORLD, {num_robots} ROBOTS, SEED={seed})      ")
+    if robot_types:
+        print(f"      ROBOT TYPES: {robot_types}")
     print("="*50 + "\n")
 
-    start_gazebo(headless=not gui, world=world, seed=seed, num_robots=num_robots)
+    start_gazebo(headless=not gui, world=world, seed=seed, num_robots=num_robots, robot_types=robot_types)
 
     print(f"[coverage-demo] Initializing Swarm Environment ({num_robots} robots)...")
     env = PettingZooSwarmEnv(num_robots=num_robots, max_steps=max_steps, continuous_exploration=True, world=world)
@@ -392,12 +394,13 @@ def main():
     parser.add_argument('--world', type=str, default='cafe', choices=['cafe', 'warehouse', 'depot', 'office', 'maze'], help="World for benchmarking/demo: 'cafe', 'warehouse', 'depot', 'office', 'maze'")
     parser.add_argument('--seed', type=int, default=42, help="Deterministic PRNG seed for Gazebo physics, sensors, and repeatable replay")
     parser.add_argument('--num-robots', type=int, default=3, help="Number of robots to evaluate (1 to 8, default: 3)")
+    parser.add_argument('--robot-types', type=str, default="waffle", help="Comma-separated robot types: waffle, pioneer2dx")
     parser.add_argument('--export-json', type=str, default="", help="Optional filepath for structured run telemetry JSON export")
     parser.add_argument('--export-heatmap', type=str, default="", help="Optional filepath for coverage heatmap PNG export")
     args = parser.parse_args()
 
     if args.coverage_demo:
-        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world, seed=args.seed, export_json=args.export_json, num_robots=args.num_robots, export_heatmap=args.export_heatmap)
+        run_coverage_demo(gui=not args.headless, max_steps=args.max_steps, world=args.world, seed=args.seed, export_json=args.export_json, num_robots=args.num_robots, export_heatmap=args.export_heatmap, robot_types=args.robot_types)
         return
 
     print("\n" + "="*50)
@@ -445,7 +448,7 @@ def main():
             sys.exit(1)
             
     # Start Gazebo
-    start_gazebo(headless=not args.gui, world=args.world, seed=args.seed, num_robots=args.num_robots)
+    start_gazebo(headless=not args.gui, world=args.world, seed=args.seed, num_robots=args.num_robots, robot_types=args.robot_types)
     
     print(f"[benchmark] Initializing Swarm Environment ({args.num_robots} robots) for world='{args.world}'...")
     env = PettingZooSwarmEnv(num_robots=args.num_robots, max_steps=150, world=args.world)
