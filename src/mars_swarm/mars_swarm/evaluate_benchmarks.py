@@ -1,4 +1,6 @@
 import os
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
+os.environ["TORCH_COMPILE_DISABLE"] = "1"
 import sys
 import time
 import math
@@ -323,9 +325,8 @@ def run_benchmark_episode(env, algo=None, policy=None, mode='random', inject_noi
         'obstacle_grid': final_obs_grid
     }
     
-    if telemetry_logger is not None:
-        telemetry_logger.finalize_and_export(final_results)
-        
+    
+
     return final_results
 def run_coverage_demo(gui=True, max_steps=1200, world='cafe', seed=42, export_json="", num_robots=3, export_heatmap="", robot_types=None):
     print("\n" + "="*50)
