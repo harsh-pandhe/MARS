@@ -17,3 +17,4 @@ numpy==2.2.3
 dm-tree==0.1.9
 pandas==2.2.3
 pyarrow==20.0.0
+lark==1.2.2

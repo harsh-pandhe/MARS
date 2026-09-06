@@ -28,6 +28,8 @@ jobs:
             ros-jazzy-nav-msgs \
             ros-jazzy-geometry-msgs \
             ros-jazzy-sensor-msgs \
+            ros-jazzy-xacro \
+            python3-lark \
             python3-colcon-common-extensions \
             build-essential
 
