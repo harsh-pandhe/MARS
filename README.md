@@ -187,6 +187,8 @@ Each robot receives a state observation vector containing:
 
 ## Cross-Environment MAPPO Result (5-World Validation)
 
+> **Note on protocols:** the numbers above (38.6% / 14.5% / 29.6%) come from a **10-episode-per-condition** evaluation on `cafe` only ("Protocol A"). The table below comes from a **separate, single-seed** run across all 5 worlds ("Protocol B", $n{=}1$ per condition). These are two different evaluation runs with different sample sizes — do not treat the ratios between them as directly comparable; each independently shows the heuristic beating MAPPO, which is the point, but the exact margins differ by protocol.
+
 The single-world result above was subsequently validated across all 5 benchmark environments (25-run matrix: 5 worlds × 5 controller/scenario conditions, $N{=}3$, fixed seed, 150-step episodes). The Frontier Heuristic outperformed the trained MAPPO policy in **every environment tested**, confirming the negative result is a structural property of the reward design, not an artifact of one map:
 
 | World | Frontier Heuristic ACR | MAPPO (Nominal) ACR |

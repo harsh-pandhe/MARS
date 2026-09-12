@@ -4,7 +4,7 @@ Five papers derived from the MARS multi-robot swarm coverage project, each self-
 
 | # | Folder | Title | Format | Core Finding |
 |---|--------|-------|--------|--------------|
-| 1 | [`paper1_negative_result_mappo/`](paper1_negative_result_mappo/) | When a Classical Heuristic Beats Multi-Agent Reinforcement Learning | SSRN-style | MAPPO loses to Frontier Heuristic in all 5 tested worlds — the headline negative result |
+| 1 | [`paper1_negative_result_mappo/`](paper1_negative_result_mappo/) | Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage | SSRN-style | MAPPO loses to Frontier Heuristic in all 5 tested worlds — the headline negative result, with explicit two-protocol evaluation, ACR definition, reward equation, and references (revised after external review) |
 | 2 | [`paper2_sample_efficient_mappo/`](paper2_sample_efficient_mappo/) | Sample-Efficient MAPPO for Physics-in-the-Loop Multi-Robot Training | SSRN-style | Diagnoses & fixes training instability; postscript reports the completed (still negative) validation |
 | 3 | [`paper3_cbf_safety_bounds/`](paper3_cbf_safety_bounds/) | Decoupling Safety Guarantees from Policy Competence | SSRN-style | CBF filter safety holds (0 collisions) even when the policy behind it is incompetent |
 | 4 | [`paper4_generalization_scaling/`](paper4_generalization_scaling/) | Environment Structure, Not Just Team Size | SSRN-style | Coverage ceiling is a topology property, not a policy property — 5-world, 4-swarm-size sweep |

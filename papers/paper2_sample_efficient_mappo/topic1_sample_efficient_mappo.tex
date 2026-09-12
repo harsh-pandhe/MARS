@@ -307,22 +307,23 @@ interface and capping the Plasma object store in-process rather than via an
 ineffective environment variable. Training was resumed and completed to the
 full 45-iteration budget without further infrastructure failures.
 
-The completed policy was then evaluated against Random Walk and the
-classical Frontier Heuristic baseline across 50 episodes (10 per condition)
-in the \texttt{cafe} world, and subsequently across all five benchmark
-worlds (\texttt{cafe}, \texttt{warehouse}, \texttt{depot}, \texttt{office},
-\texttt{maze}) at $N{=}3$ robots. Table~\ref{tab:postscript-results}
-reports the outcome.
+The completed policy was evaluated under two separate protocols that we
+report separately rather than merge, since they differ in sample size and
+should not be treated as numerically interchangeable. \textbf{Protocol
+A} (10 episodes per condition, \texttt{cafe} only, 50 episodes total)
+gives median ACR of 38.6\% (Frontier Heuristic) versus 14.5\% (MAPPO
+nominal). \textbf{Protocol B} (single seed, one episode per condition,
+all five benchmark worlds at $N{=}3$) gives Table~\ref{tab:postscript-results}.
 
 \begin{table}[h]
 \centering
-\caption{MAPPO (45 iterations) vs.\ Frontier Heuristic, median ACR (\%), 10-episode evaluation, 150-step episodes.}
+\caption{Protocol B: MAPPO (45 iterations) vs.\ Frontier Heuristic, ACR (\%), single-seed, 150-step episodes, all five worlds.}
 \label{tab:postscript-results}
 \begin{tabular}{lcc}
 \hline
 World & Frontier Heuristic & MAPPO (Nominal) \\
 \hline
-cafe      & 38.6 & 14.5 \\
+cafe      & 57.0 & 28.2 \\
 warehouse & 4.3  & 3.3 \\
 depot     & 13.3 & 6.7 \\
 office    & 3.8  & 3.0 \\
@@ -332,20 +333,25 @@ maze      & 2.7  & 2.2 \\
 \end{table}
 
 Contrary to the correction's intended effect, the trained policy did not
-close the gap to the heuristic in any of the five environments. Root-cause
+close the gap to the heuristic under either protocol, in any of the five
+environments evaluated. Root-cause
 analysis of the trained policy's rollout behaviour (average displacement of
 $1.5\,$m over a 150-step episode, versus $5.4\,$m for the heuristic)
 indicates that the reward-shaping correction reduced entropy collapse and
-value-loss instability as intended, but did not overcome a deeper
-penalty-aversion effect: dense per-step collision penalties dominate the
-sparse cell-discovery bonus early in training, and the policy converges to
-a low-risk, low-reward equilibrium (near-zero velocity commands) before
-exploration pressure can shift it off that equilibrium. We report this as a
-completed negative result. The correction proposed in this paper is
+value-loss instability as intended, but did not overcome the policy's
+convergence to a low-displacement, low-reward equilibrium (near-zero
+velocity commands). This is consistent with dense per-step collision
+penalties dominating the sparse cell-discovery bonus, but we did not run a
+reward-coefficient ablation to establish this as the causal mechanism
+rather than a correlated symptom, nor a longer training budget to rule out
+undertraining; both are identified as priority follow-up experiments. We
+report this as a completed negative result under the training budget and
+reward specified in this paper. The correction proposed in this paper is
 necessary to obtain a numerically stable training run at all under a small
-sample budget, but is not sufficient to produce a policy competitive with a
-classical planner on this task; the dominant remaining failure mode is a
-reward-structure problem, not an optimizer or sample-efficiency problem,
+sample budget, but is not, on this evidence, sufficient to produce a policy
+competitive with a classical planner on this task; the dominant remaining
+failure mode is more consistent with a reward-structure problem than an
+optimizer or sample-efficiency problem,
 and is addressed as a separate line of work.
 
 \bibliographystyle{plain}
