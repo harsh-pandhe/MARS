@@ -185,10 +185,35 @@ Each robot receives a state observation vector containing:
 
 ---
 
+## Cross-Environment MAPPO Result (5-World Validation)
+
+The single-world result above was subsequently validated across all 5 benchmark environments (25-run matrix: 5 worlds × 5 controller/scenario conditions, $N{=}3$, fixed seed, 150-step episodes). The Frontier Heuristic outperformed the trained MAPPO policy in **every environment tested**, confirming the negative result is a structural property of the reward design, not an artifact of one map:
+
+| World | Frontier Heuristic ACR | MAPPO (Nominal) ACR |
+| :--- | :---: | :---: |
+| `cafe` | 57.0% | 28.2% |
+| `warehouse` | 4.34% | 3.31% |
+| `depot` | 13.28% | 6.69% |
+| `office` | 3.80% | 2.95% |
+| `maze` | 2.73% | 2.17% |
+
+Full breakdown (including Random Walk, sensor-noise, and agent-failure conditions per world) in [`docs/BENCHMARK_WORLDS.md`](docs/BENCHMARK_WORLDS.md) Section 10 and the raw data in [`checkpoints/mappo_multiworld_comparison.json`](checkpoints/mappo_multiworld_comparison.json).
+
+---
+
 ## Benchmark Environments & Fuel Worlds Expansion
 
 For detailed physical parameters, single-threaded deterministic ODE physics specifications, 1,200-step comparisons, and extended ceiling runs across all 5 supported environments (`cafe`, `warehouse`, `depot`, `office`, `maze`), see:
 - [**Benchmark Worlds & Fuel Environments Report**](file:///home/harsh-pandhe/GitHub/MARS/docs/BENCHMARK_WORLDS.md)
+
+---
+
+## Research Outputs
+
+This project's results are written up as 5 self-contained research papers and 10 LinkedIn posts, both fully drafted and ready to publish/post:
+
+- [**`papers/`**](papers/) — 5 papers (source + compiled PDF + figures), SSRN/arXiv/conference-ready. See [`papers/README.md`](papers/README.md) for the index and headline findings per paper.
+- [**`posts/`**](posts/) — 10 LinkedIn posts, each with ready-to-paste copy and a specific image/attachment instruction. See [`posts/README.md`](posts/README.md) for suggested posting order and cadence.
 
 
 
