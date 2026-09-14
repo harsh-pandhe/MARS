@@ -48,8 +48,8 @@ penalty reduced to $2.0$), and a HighDiscovery configuration (discovery
 bonus raised to $16.0$). While reconciling an internal numerical
 inconsistency, we discovered that this Gazebo-based evaluation harness is
 not fully deterministic even at a fixed seed and a fixed saved checkpoint,
-and re-evaluated each trained checkpoint three repeated times across the
-same three training seeds (42, 7, 99). \textbf{The correct unit of
+and re-evaluated each trained checkpoint in three repeated evaluation passes
+across the same three training seeds (42, 7, 99). \textbf{The correct unit of
 statistical independence here is the trained checkpoint (one per seed),
 not the individual evaluation episode}: our first attempt at this
 analysis treated all 9 episodes per arm as independent samples, which is
@@ -88,7 +88,7 @@ we report that limitation explicitly rather than presenting point
 estimates or underpowered significance tests as settled fact. We argue
 that an evidence-scoped claim -- that MAPPO consistently exhibited a
 low-displacement behavioral failure mode, that a reward manipulation
-plausibly but not statistically confirmedly mitigates it at the
+plausibly mitigates it, but this effect is not statistically confirmed at the
 independent-replicate sample sizes we could afford, and that it did not
 close the gap to a strong classical planner under the tested compute
 budgets -- is more defensible and useful to practitioners than sweeping
@@ -383,8 +383,8 @@ penalty reduced to $2.0$, discovery bonus held at $4.0$), and
 raised to $16.0$). After discovering that a single evaluation pass is not
 representative of a checkpoint's behaviour
 (Section~\ref{sec:nondeterminism}), we evaluated \emph{every} arm's
-trained checkpoint three repeated times each across the same three seeds
-(42, 7, 99), giving 9 episodes per configuration and 27 episodes in
+trained checkpoint in three repeated evaluation passes across the same three
+seeds (42, 7, 99), giving 9 episodes per configuration and 27 episodes in
 total -- equal evaluation depth across all three arms, correcting the
 single-pass Baseline/HighDiscovery numbers reported in an earlier
 revision of this paper (this is a repeated-measurement count, not an
