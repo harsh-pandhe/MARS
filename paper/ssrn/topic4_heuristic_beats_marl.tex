@@ -3,6 +3,7 @@
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{dsfont}
 \usepackage[margin=1in]{geometry}
 \usepackage{hyperref}
 
@@ -19,7 +20,7 @@ for Multi-Robot Area Coverage}
 proposed as a route to learned coordination for multi-robot exploration
 tasks where a classical decentralized planner is already a strong
 baseline, but negative results -- where a MARL policy is trained under a
-realistic budget and simply underperforms -- are rarely reported with the
+bounded compute budget and simply underperforms -- are rarely reported with the
 same rigor as positive results.
 \textbf{Methodology.} We train a centralized-critic MAPPO policy (Ray
 RLlib) on a 3-robot area-coverage task in a simulated environment
@@ -201,9 +202,9 @@ would change the outcome (see Section~\ref{sec:discussion}).
 \subsection{Reward Function}
 The per-robot, per-step reward is
 \begin{equation}
-r_t = -0.01 + 5.0\,\Delta d_{\text{goal}} + 4.0\,n_{\text{new-cells}} - 8.0\,\mathbb{1}[\text{wall collision}] - p_{\text{proximity}} + 20\,\mathbb{1}[\text{goal reached}]
+r_t = -0.01 + 5.0\,\Delta d_{\text{goal}} + 4.0\,n_{\text{new-cells}} - 8.0\,\mathds{1}[\text{wall collision}] - p_{\text{proximity}} + 20\,\mathds{1}[\text{goal reached}]
 \end{equation}
-where $\Delta d_{\text{goal}}$ is the reduction in distance to the
+where $\Delta d_{\text{goal}} = d_{\text{goal}, t-1} - d_{\text{goal}, t}$ is the reduction in distance to the
 robot's current goal since the previous step, $n_{\text{new-cells}}$ is
 the number of previously-unvisited grid cells the swarm collectively
 discovered this step, and $p_{\text{proximity}}$ is $0.5$ if any other
@@ -281,8 +282,8 @@ evaluation on an earlier checkpoint) and Protocol~B's 2.0$\times$ margin
 interchangeable figures: Protocol~A isolates distributional stability in
 the training domain, whereas Protocol~B (exploratory, $n{=}1$ per cell)
 suggests the ranking may generalize across diverse obstacle topologies,
-without statistically confirming it. Protocol~C is our only attempt at a
-causal test of the mechanism behind the policy's displacement, and even
+without statistically confirming it. Protocol~C is our only controlled
+causal probe of the mechanism behind the policy's displacement, and even
 there neither ablation arm reached significance at the achievable sample
 size (Section~\ref{sec:corrected-stats}).
 
@@ -305,11 +306,13 @@ required to make this table statistically comparable to Protocol~C.
 
 \begin{table}[h]
 \centering
-\caption{Protocol B (exploratory): ACR (\%) and total swarm displacement (m), 150-step episodes, 3 robots, single seed, single episode per cell -- not repeated, not statistically tested. Ratios in the last column are Heuristic~/~MAPPO.}
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Protocol B (exploratory): ACR (\%) and total swarm displacement (m), 150-step episodes, 3 robots, single seed, single episode per cell -- not repeated, not statistically tested. ACR Ratios in the last column are Heuristic~/~MAPPO.}
 \label{tab:5world}
 \begin{tabular}{lccccc}
 \toprule
-World & Heuristic ACR & MAPPO ACR & Random ACR & Heuristic Dist. & Ratio (H/M) \\
+World & Heuristic ACR & MAPPO ACR & Random ACR & Heuristic Dist.\ (m) & ACR Ratio (H/M) \\
 \midrule
 cafe      & 57.0 & 28.2 & 22.6 & 16.5 & 2.0$\times$ \\
 warehouse & 4.3  & 3.3  & 2.6  & 31.0 & 1.3$\times$ \\
@@ -394,8 +397,8 @@ for independent verification.
 
 \begin{table}[h]
 \centering
-\small
-\setlength{\tabcolsep}{5pt}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
 \caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, 3 robots, 9 episodes per configuration: 3 seeds $\times$ 3 repeated passes). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
 \label{tab:ablation}
 \begin{tabular}{lccccc}
@@ -552,9 +555,9 @@ considerably more cautious conclusions:
     ordering by test statistic, though neither is conclusive.
     \item \textbf{Coverage efficiency, not raw displacement, best
     distinguishes HighDiscovery from the other two arms.} HighDiscovery's
-    cells-per-meter efficiency ($21.3$) is meaningfully higher than both
+    cells-per-meter efficiency ($21.3$) is numerically higher than both
     Baseline's and LowPenalty's (both $\approx 16.5$), while its raw mean
-    displacement ($15.27\,$m) is not meaningfully higher than Baseline's
+    displacement ($15.27\,$m) does not substantially exceed Baseline's
     ($13.69\,$m). This is our best available evidence that reward shaping
     here alters \emph{how} the policy moves, not merely \emph{how much},
     though we caution this is a within-arm descriptive statistic, not an
@@ -605,7 +608,7 @@ fully deterministic at fixed seed and checkpoint
 (Section~\ref{sec:nondeterminism}) and that our first attempt to correct
 for this via a 9-episode Welch's-$t$ analysis was itself statistically
 invalid (pseudoreplication; Section~\ref{sec:corrected-stats}), the
-properly-powered $n=3$ paired analysis shows neither manipulation reaches
+corrected $n=3$ paired analysis shows neither manipulation reaches
 significance, so we cannot claim confirmed support for the original
 hypothesis from either arm.
 
@@ -617,7 +620,7 @@ vs.\ Baseline's $16.5$) is the one descriptive quantity in this ablation
 that shows the largest separation from Baseline, though it too is drawn
 from the same three seeds and is not itself significance-tested. Taken
 together with the observation that HighDiscovery's mean displacement
-($15.3\,$m) is \emph{not} meaningfully higher than Baseline's
+($15.3\,$m) is \emph{not} substantially higher than Baseline's
 ($13.7\,$m), the most defensible reading is: \emph{if} strengthening the
 discovery signal has a real effect, it is more consistent with the policy
 moving more \emph{purposefully} toward undiscovered cells than with it

@@ -63,3 +63,9 @@ checkpoints/*.tfevents*
 .gemini/
 .ipynb_checkpoints/
 
+# LaTeX Build Artifacts
+*.aux
+*.log
+*.out
+*.blg
+*.bbl
