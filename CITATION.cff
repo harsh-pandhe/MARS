@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, simulation environments, or benchmark data, please cite it as below."
+authors:
+  - family-names: "Pandhe"
+    given-names: "Harsh"
+title: "MARS: Multi-Agent Robot Swarm Navigation, Area Coverage, and MAPPO Benchmark Suite"
+version: 1.0.0
+date-released: 2026-09-15
+url: "https://github.com/harsh-pandhe/MARS"
+repository-code: "https://github.com/harsh-pandhe/MARS"
+keywords:
+  - "multi-agent reinforcement learning"
+  - "MAPPO"
+  - "robotics"
+  - "ROS 2"
+  - "Gazebo"
+  - "area coverage"
+  - "control barrier functions"
+  - "frontier exploration"
+license: "Apache-2.0"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Pandhe"
+      given-names: "Harsh"
+  title: "Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"
+  year: 2026
+  url: "https://github.com/harsh-pandhe/MARS"

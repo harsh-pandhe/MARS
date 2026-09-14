@@ -1,5 +1,15 @@
 # MARS: Multi-Agent Robot Swarm Navigation & Area Coverage
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.pending.svg)](https://zenodo.org/)
+[![Paper](https://img.shields.io/badge/Paper-Preprint%20PDF-red.svg)](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)
+[![CI Tests](https://img.shields.io/badge/Tests-53%2F53%20Passing-brightgreen.svg)](tests/)
+
+> [!NOTE]
+> **Research Preprint**: This repository hosts the code, simulation environments, trained policy checkpoints, and raw telemetry data for:
+> **"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"** (Pandhe, 2026).
+> The LaTeX sources, compiled 15-page manuscript, and figures are located in [`papers/paper1_negative_result_mappo/`](papers/paper1_negative_result_mappo/).
+
 > [!CAUTION]
 > **ARCHITECTURAL DECISION: MAPPO IS FORMALLY DEPRECATED ("DOES NOT WORK")**
 > Multi-Agent PPO (MAPPO) was rigorously benchmarked across 50 empirical trials (10 episodes per condition) and **fails to achieve viable area coverage in dense obstacle environments**. Due to sparse exploration rewards vs. dense collision penalties, MAPPO collapses into penalty-avoidance policy freezing: agents hover in place, traveling an average of only **1.5 m** per episode and achieving a median ACR of **14.5%** — trailing even pure Random Walk (**29.6%**) and the Frontier Heuristic (**38.6%**).
@@ -210,13 +220,66 @@ For detailed physical parameters, single-threaded deterministic ODE physics spec
 
 ---
 
+## Reproducing Paper Results
+
+The repository includes all environments, configurations, pre-trained weights, and evaluation manifests described in *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"*:
+
+### 1. Protocol A: Café Distributional Comparison (50 Episodes)
+Evaluates 10 episodes each across Frontier Heuristic, Random Walk, MAPPO Nominal, MAPPO Sensor Noise, and MAPPO Agent Failure:
+```bash
+# Sourcing environment
+source /opt/ros/jazzy/setup.bash && source install/setup.bash
+
+# Run quantitative benchmark across all baselines
+./run_swarm.sh --benchmark ./checkpoints --world cafe
+```
+Outputs are written to `checkpoints/run_summary.json` and plotted in `checkpoints/benchmark_results.png`.
+
+### 2. Protocol B: Cross-World Generalization ($5 \times 5$ Evaluation Matrix)
+Runs single-episode benchmark probes across `cafe`, `warehouse`, `depot`, `office`, and `maze`:
+```bash
+python3 src/mars_swarm/mars_swarm/benchmark_mappo_multiworld.py
+```
+Outputs are recorded in [`checkpoints/mappo_multiworld_comparison.json`](checkpoints/mappo_multiworld_comparison.json).
+
+### 3. Protocol C: Controlled Multi-Seed Reward Ablation
+Inspect the 25 raw ablation evaluation manifests and the corrected statistical analysis:
+```bash
+# View corrected statistical analysis (paired t-test across n=3 seeds)
+cat checkpoints/ablation_results/corrected_statistical_analysis.json
+
+# Run unit and integration tests
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/
+```
+
+---
+
 ## Research Outputs
 
-This project's results are written up as 5 self-contained research papers and 10 LinkedIn posts, both fully drafted and ready to publish/post:
+This project's results are written up as 5 self-contained research papers and 10 LinkedIn posts:
 
 - [**`papers/`**](papers/) — 5 papers (source + compiled PDF + figures), SSRN/arXiv/conference-ready. See [`papers/README.md`](papers/README.md) for the index and headline findings per paper.
-- [**`posts/`**](posts/) — 10 LinkedIn posts, each with ready-to-paste copy and a specific image/attachment instruction. See [`posts/README.md`](posts/README.md) for suggested posting order and cadence.
+- [**`papers/paper1_negative_result_mappo/`**](papers/paper1_negative_result_mappo/) — Primary preprint: *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"* ([PDF](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)).
+- [**`posts/`**](posts/) — 10 LinkedIn posts with copy and figures. See [`posts/README.md`](posts/README.md).
 
+---
 
+## Citation
 
+If you use this codebase, simulation environments, trained policies, or benchmark results in your research, please cite:
 
+```bibtex
+@article{pandhe2026mappo_failure,
+  title   = {Diagnosing a Low-Displacement Failure Mode in {MAPPO} for Multi-Robot Area Coverage},
+  author  = {Pandhe, Harsh},
+  year    = {2026},
+  journal = {arXiv preprint},
+  url     = {https://github.com/harsh-pandhe/MARS}
+}
+```
+
+---
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).

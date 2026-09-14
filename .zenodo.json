@@ -1,0 +1,29 @@
+{
+  "title": "MARS: Code, Checkpoints, and Benchmark Artifacts for Diagnosing a Low-Displacement Failure Mode in MAPPO",
+  "description": "Complete source code, ROS 2 Jazzy and Gazebo Sim environments, trained MAPPO and ablation policy checkpoints, evaluation logs, and raw ablation telemetry for multi-robot area coverage benchmarking and failure mode diagnosis.",
+  "creators": [
+    {
+      "name": "Pandhe, Harsh",
+      "affiliation": "Independent Researcher"
+    }
+  ],
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "keywords": [
+    "multi-agent reinforcement learning",
+    "MAPPO",
+    "robotics",
+    "ROS 2",
+    "Gazebo",
+    "area coverage",
+    "frontier exploration",
+    "reproducibility"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/harsh-pandhe/MARS",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}
