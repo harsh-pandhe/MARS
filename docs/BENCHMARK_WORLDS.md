@@ -88,7 +88,7 @@ Similar to the warehouse world (where coverage climbed from 56.0% at 12,000 step
   - Step 2,800: 85.1% ACR (saturation reached)
   - Step 3,500: 85.7% ACR (final ceiling)
 - **Ceiling Verdict**: Depot was heavily step-starved at 1,200 steps (32.8%). The swarm required ~1,800 steps to clear inner boxset corridors before surging outward to discover the remaining perimeter floor. The true accessible free-space ceiling is **85.7%** (14.3% physical obstacle occupancy).
-- **Companion Heatmap**: [`docs/heatmaps/depot_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/depot_extended_heatmap.png).
+- **Companion Heatmap**: [`docs/heatmaps/depot_extended_heatmap.png`](docs/heatmaps/depot_extended_heatmap.png).
 
 #### Office 3,500-Step Multi-Room Infiltration Analysis
 - **Initial Run (1,200 Steps)**: **44.1% ACR**, $108.68\text{m}$ distance, 0 collisions. Step-starved.
@@ -101,7 +101,7 @@ Similar to the warehouse world (where coverage climbed from 56.0% at 12,000 step
   - Step 3,000: 97.0% ACR (clearing residual corners)
   - Step 3,500: 98.3% ACR (near-complete floor saturation)
 - **Ceiling Verdict**: Contrary to earlier assumptions that drywall partitions and narrow doorways would cap reachable space around ~45-50%, the swarm achieved **98.3% ACR** under extended budget with **flawless safety** (0 wall and 0 agent collisions across $376.7\text{m}$). The 44.1% initial result was 100% step-starvation caused by the time needed for agents to sequentially discover and negotiate doorway bottlenecks.
-- **Companion Heatmap**: [`docs/heatmaps/office_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/office_extended_heatmap.png).
+- **Companion Heatmap**: [`docs/heatmaps/office_extended_heatmap.png`](docs/heatmaps/office_extended_heatmap.png).
 
 #### Maze 4,000-Step Deep Infiltration Analysis
 - **Initial Run (1,200 Steps)**: **9.1% ACR**, $99.36\text{m}$ distance, `tb3` reached $y \approx 28.3\text{m}$ (halfway through the 64m maze). Step-starved.
@@ -191,7 +191,7 @@ To confirm that the Quadratic Programming Control Barrier Function (CBF) holds s
 ## 8. Swarm Heterogeneity Verification (Waffle & Pioneer 2DX)
 
 To confirm multi-model kinematic support and eliminate single-hardware coupling:
-1. **Non-Waffle Platform**: Downloaded and integrated the **Pioneer 2DX** model from Gazebo Fuel into [`src/mars_swarm/models/pioneer2dx/`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/models/pioneer2dx/) with custom differential-drive and GPU LiDAR Xacro integration ([`pioneer2dx.sdf.xacro`](file:///home/harsh-pandhe/GitHub/MARS/src/mars_swarm/urdf/pioneer2dx.sdf.xacro)).
+1. **Non-Waffle Platform**: Downloaded and integrated the **Pioneer 2DX** model from Gazebo Fuel into [`src/mars_swarm/models/pioneer2dx/`](src/mars_swarm/models/pioneer2dx/) with custom differential-drive and GPU LiDAR Xacro integration ([`pioneer2dx.sdf.xacro`](src/mars_swarm/urdf/pioneer2dx.sdf.xacro)).
 2. **Heterogeneous Swarm Deployment**:
 
 | Configuration | Test Horizon | Swarm Composition | Area Coverage (ACR %) | Total Dist ($m$) | Collisions (Wall / Agent) | Status |
@@ -208,7 +208,7 @@ This consolidated master table provides a **single checkable source of truth** c
 ### A. Grand Multi-World & Multi-Robot Verification Matrix
 
 | World | Swarm Size ($N$) & Type | Evaluation Horizon | Area Coverage (ACR %) | Reachable Ceiling Saturated? | Total Swarm Dist ($m$) | Dist / Robot ($m$) | Overlap Redundancy | Wall Collisions | Inter-Agent Collisions | Minimum Clearance ($m$) | Telemetry Artifact Source | Acceptance Verdict |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :---: |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :---: |
 | **`cafe`** | **2** (Waffle) | 200 steps | 64.3% | Expanding | 14.1 m | 7.1 m | 10.53 | 0 | **0** | $>0.45\text{m}$ | `sweep_scaling_results.json` | **PASSED** |
 | | **3** (Waffle) | 200 steps | 69.3% | Expanding | 20.7 m | 6.9 m | 10.53 | 0 | **0** | $>0.45\text{m}$ | `sweep_scaling_results.json` | **PASSED** |
 | | **5** (Waffle) | 200 steps | 66.9% | Expanding | 31.7 m | 6.3 m | 17.86 | 42 | 2 | $0.36\text{m}$ | `sweep_scaling_results.json` | **PASSED** |
@@ -255,22 +255,22 @@ This consolidated master table provides a **single checkable source of truth** c
 | **AC-06** | **Dynamic Moving Hazard Invariance** | Active CBF avoidance against non-static closing actors | Zero contacts under $v_{rel} = 0.38\text{ m/s}$ head-on charge (active reverse buffer hold) and orthogonal crossing (yield at standstill). | **SATISFIED** |
 | **AC-07** | **Wall-Collision Mitigation** | Bumper thresholding ($0.14\text{m}$) and damping | Wall collisions in `depot` reduced by **84.8%** ($3,144 \rightarrow 477$); `office` completed 3,500 steps with **0 wall collisions**. | **SATISFIED** |
 | **AC-08** | **Deadlock Detection & Recovery** | Autonomous escape from frontier traps | A* unreachable target blacklisting and motion watchdog prevent permanent freezes across long-horizon episodes. | **SATISFIED** |
-| **AC-09** | **Visual Artifact Generation** | Publication-grade coverage heatmap rendering | Automated generation of colored PNG heatmaps and `.npz` arrays for all worlds in [`docs/heatmaps/`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/). | **SATISFIED** |
+| **AC-09** | **Visual Artifact Generation** | Publication-grade coverage heatmap rendering | Automated generation of colored PNG heatmaps and `.npz` arrays for all worlds in [`docs/heatmaps/`](docs/heatmaps/). | **SATISFIED** |
 | **AC-10** | **Deterministic CI & Test Coverage** | Headless automated testing with 100% test pass rate | **53 / 53 tests passing** (`pytest tests/ -v`), single-threaded ODE physics with reproducible `--seed` propagation. | **SATISFIED** |
 
 ---
 
 ### C. Checkable Artifact Inventory ("Done" Evidence)
-- **Warehouse 24,000-Step Baseline**: [`checkpoints/run_summary.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/run_summary.json) (100.0% ACR, 0 agent collisions).
-- **Scalability Sweep (20 Configurations)**: [`checkpoints/sweep_scaling_results.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/sweep_scaling_results.json).
-- **Multi-World MAPPO Comparison (25 Runs)**: [`checkpoints/mappo_multiworld_comparison.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/mappo_multiworld_comparison.json).
-- **Depot 3,500-Step Extended Run**: [`checkpoints/depot_extended_summary.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/depot_extended_summary.json) (85.7% ACR).
-- **Office 3,500-Step Extended Run**: [`checkpoints/office_extended_summary.json`](file:///home/harsh-pandhe/GitHub/MARS/checkpoints/office_extended_summary.json) (98.3% ACR, 0 collisions).
+- **Warehouse 24,000-Step Baseline**: [`checkpoints/run_summary.json`](checkpoints/run_summary.json) (100.0% ACR, 0 agent collisions).
+- **Scalability Sweep (20 Configurations)**: [`checkpoints/sweep_scaling_results.json`](checkpoints/sweep_scaling_results.json).
+- **Multi-World MAPPO Comparison (25 Runs)**: [`checkpoints/mappo_multiworld_comparison.json`](checkpoints/mappo_multiworld_comparison.json).
+- **Depot 3,500-Step Extended Run**: [`checkpoints/depot_extended_summary.json`](checkpoints/depot_extended_summary.json) (85.7% ACR).
+- **Office 3,500-Step Extended Run**: [`checkpoints/office_extended_summary.json`](checkpoints/office_extended_summary.json) (98.3% ACR, 0 collisions).
 - **Coverage Heatmaps**:
-  - `cafe`: [`docs/heatmaps/cafe_coverage_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/cafe_coverage_heatmap.png)
-  - `warehouse`: [`docs/heatmaps/warehouse_demo_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/warehouse_demo_heatmap.png)
-  - `depot`: [`docs/heatmaps/depot_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/depot_extended_heatmap.png)
-  - `office`: [`docs/heatmaps/office_extended_heatmap.png`](file:///home/harsh-pandhe/GitHub/MARS/docs/heatmaps/office_extended_heatmap.png)
+  - `cafe`: [`docs/heatmaps/cafe_coverage_heatmap.png`](docs/heatmaps/cafe_coverage_heatmap.png)
+  - `warehouse`: [`docs/heatmaps/warehouse_demo_heatmap.png`](docs/heatmaps/warehouse_demo_heatmap.png)
+  - `depot`: [`docs/heatmaps/depot_extended_heatmap.png`](docs/heatmaps/depot_extended_heatmap.png)
+  - `office`: [`docs/heatmaps/office_extended_heatmap.png`](docs/heatmaps/office_extended_heatmap.png)
 
 ---
 

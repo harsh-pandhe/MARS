@@ -11,9 +11,10 @@ if [ -z "$CONFIG_NAME" ] || [ -z "$CHECKPOINT_PATH" ] || [ ${#SEEDS[@]} -eq 0 ];
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source /opt/ros/jazzy/setup.bash
-source /home/harsh-pandhe/GitHub/MARS/install/setup.bash
-cd /home/harsh-pandhe/GitHub/MARS
+source "$SCRIPT_DIR/install/setup.bash"
+cd "$SCRIPT_DIR"
 
 mkdir -p checkpoints/ablation_results
 
