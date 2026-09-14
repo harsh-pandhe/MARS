@@ -35,7 +35,7 @@ Heuristic (38.6\% median area coverage rate, ACR) and Random Walk
 (29.6\%) outperform the trained MAPPO policy (14.5\%, averaging 1.5\,m of
 displacement per robot over 150 steps, a 2.7$\times$ heuristic advantage).
 Under a separate, single-seed cross-environment matrix (Protocol~B,
-150-step episodes, $N{=}3$), the Frontier Heuristic outperforms MAPPO in
+150-step episodes, 3 robots), the Frontier Heuristic outperforms MAPPO in
 every environment tested, by margins of 1.2$\times$ to 2.0$\times$
 (achieving 57.0\% vs.\ 28.2\% in the caf\'e).
 \textbf{Diagnosis and Ablation.} To test whether this low-displacement
@@ -279,9 +279,12 @@ We treat Protocol~A's 2.7$\times$ margin (10-episode distributional
 evaluation on an earlier checkpoint) and Protocol~B's 2.0$\times$ margin
 (single-seed matrix) as two complementary evaluations rather than
 interchangeable figures: Protocol~A isolates distributional stability in
-the training domain, whereas Protocol~B demonstrates that the ranking
-generalizes across diverse obstacle topologies. Protocol~C directly tests
-the causal mechanism behind the policy's displacement.
+the training domain, whereas Protocol~B (exploratory, $n{=}1$ per cell)
+suggests the ranking may generalize across diverse obstacle topologies,
+without statistically confirming it. Protocol~C is our only attempt at a
+causal test of the mechanism behind the policy's displacement, and even
+there neither ablation arm reached significance at the achievable sample
+size (Section~\ref{sec:corrected-stats}).
 
 \section{Results}
 \label{sec:results}
@@ -302,7 +305,7 @@ required to make this table statistically comparable to Protocol~C.
 
 \begin{table}[h]
 \centering
-\caption{Protocol B (exploratory): ACR (\%) and total swarm displacement (m), 150-step episodes, $N{=}3$, single seed, single episode per cell -- not repeated, not statistically tested. Ratios in the last column are Heuristic~/~MAPPO.}
+\caption{Protocol B (exploratory): ACR (\%) and total swarm displacement (m), 150-step episodes, 3 robots, single seed, single episode per cell -- not repeated, not statistically tested. Ratios in the last column are Heuristic~/~MAPPO.}
 \label{tab:5world}
 \begin{tabular}{lccccc}
 \toprule
@@ -376,13 +379,16 @@ penalty reduced to $2.0$, discovery bonus held at $4.0$), and
 \textbf{HighDiscovery} (collision penalty held at $8.0$, discovery bonus
 raised to $16.0$). After discovering that a single evaluation pass is not
 representative of a checkpoint's behaviour
-(Section~\ref{sec:nondeterminism}), we evaluated \emph{every} arm three
-independent times across the same three seeds (42, 7, 99), giving 9
-episodes per configuration and 27 episodes in total -- equal statistical
-treatment across all three arms, correcting the single-pass
-Baseline/HighDiscovery numbers reported in an earlier revision of this
-paper. Table~\ref{tab:ablation} summarizes the pooled results; all values
-are taken directly from per-episode evaluation logs with no post-hoc
+(Section~\ref{sec:nondeterminism}), we evaluated \emph{every} arm's
+trained checkpoint three repeated times each across the same three seeds
+(42, 7, 99), giving 9 episodes per configuration and 27 episodes in
+total -- equal evaluation depth across all three arms, correcting the
+single-pass Baseline/HighDiscovery numbers reported in an earlier
+revision of this paper (this is a repeated-measurement count, not an
+independent-sample count; see Section~\ref{sec:corrected-stats} for the
+statistically correct unit of independence). Table~\ref{tab:ablation}
+summarizes the pooled results; all values are taken directly from
+per-episode evaluation logs with no post-hoc
 adjustment, and are persisted in this project's public results directory
 for independent verification.
 
@@ -390,7 +396,7 @@ for independent verification.
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
-\caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, $N{=}3$, 9 episodes per configuration: 3 seeds $\times$ 3 repeated passes). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
+\caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, 3 robots, 9 episodes per configuration: 3 seeds $\times$ 3 repeated passes). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
 \label{tab:ablation}
 \begin{tabular}{lccccc}
 \toprule
@@ -635,16 +641,19 @@ intervention rate and magnitude, and the spatial distribution of visited
 cells relative to the frontier) that we did not collect in this revision
 and identify as the most valuable follow-up measurement.
 
-Even under the better-performing HighDiscovery configuration, MAPPO's mean
-ACR ($40.5\%$) remains below the Frontier Heuristic's $57.0\%$ single-pass
-result in Protocol~B (exploratory, $n{=}1$, not statistically matched to
-this ablation) and below its $38.6\%$ median in the separate,
-10-episode-per-condition Protocol~A -- two different evaluation
-protocols on the same environment, neither directly comparable to the
-other's sample size, but both above HighDiscovery's mean. We have not
-evaluated HighDiscovery beyond a 15-iteration budget or beyond
-\texttt{cafe}. This shows that reward tuning alone, at the budget and
-seed count tested here, does not clearly close the gap:
+HighDiscovery reaches a mean ACR of $40.5\%$ under the 15-iteration
+ablation, numerically exceeding the Frontier Heuristic's $38.6\%$ median
+in the separate, 10-episode-per-condition Protocol~A, but remaining below
+the Heuristic's $57.0\%$ single-pass result in Protocol~B (exploratory,
+$n{=}1$, not statistically matched to this ablation). Because these three
+figures come from different checkpoints, training budgets, and evaluation
+protocols, none of these comparisons should be read as a direct head-to-head
+estimate -- we report them side by side only to note that HighDiscovery's
+gain does not obviously close the gap to the heuristic under either
+protocol, not to claim a precise margin. We have not evaluated
+HighDiscovery beyond a 15-iteration budget or beyond \texttt{cafe}. This
+shows that reward tuning alone, at the budget and seed count tested here,
+does not clearly close the gap:
 \begin{itemize}
     \item \textbf{Structural knowledge advantage:} The Frontier Heuristic
     leverages an explicit occupancy grid, A* graph search, and Voronoi
