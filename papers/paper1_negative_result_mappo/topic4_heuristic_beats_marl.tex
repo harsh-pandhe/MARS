@@ -47,7 +47,7 @@ penalty reduced to $2.0$), and a HighDiscovery configuration (discovery
 bonus raised to $16.0$). While reconciling an internal numerical
 inconsistency, we discovered that this Gazebo-based evaluation harness is
 not fully deterministic even at a fixed seed and a fixed saved checkpoint,
-and re-evaluated all three arms three independent times each across the
+and re-evaluated each trained checkpoint three repeated times across the
 same three training seeds (42, 7, 99). \textbf{The correct unit of
 statistical independence here is the trained checkpoint (one per seed),
 not the individual evaluation episode}: our first attempt at this
@@ -69,7 +69,9 @@ coverage-efficiency metric (newly-discovered cells per meter travelled)
 shows HighDiscovery at $21.3$ cells/m versus Baseline's $16.5$ and
 LowPenalty's $16.5$ -- directionally consistent with HighDiscovery
 improving movement \emph{efficiency} rather than raw displacement or ACR
-alone, independent of the underpowered significance test.
+alone; this descriptive metric is drawn from the same three seeds as the
+significance test and should be read as suggestive, not as an
+independent confirmation.
 \textbf{Contribution.} We report this negative result, its reward
 ablation, the evaluation non-determinism we discovered, and a
 pseudoreplication error in our own initial statistical analysis that we
@@ -130,9 +132,15 @@ controller produced it, passes through an identical unicycle Control
 Barrier Function (CBF) filter \cite{ames2019cbf}, solved as a quadratic
 program via OSQP \cite{stellato2020osqp} at each control step, with separate safety
 radii for static obstacles ($d_{\text{safe,obs}}=0.22$\,m) and neighboring
-agents ($d_{\text{safe,agent}}=0.45$\,m). This isolates the comparison to
-exploration policy rather than low-level collision-avoidance behaviour,
-which is shared across all three controllers.
+agents ($d_{\text{safe,agent}}=0.45$\,m). All controllers share this
+identical CBF filter, controlling for the low-level collision-avoidance
+implementation itself; however, we did not measure how often or by how
+much the filter modifies each controller's requested action before
+execution, so we cannot rule out that the filter mediates the observed
+policy behaviour differently across controllers (e.g.\ if MAPPO requests
+unsafe actions far more often than the heuristic, the filter's
+interventions -- not just the underlying policy -- could shape the
+displacement patterns we report).
 
 \subsection{Controllers Compared}
 \textbf{Frontier Heuristic}: a non-learned controller combining frontier
@@ -512,18 +520,18 @@ had we not caught the pseudoreplication error, we would have published
 the opposite qualitative conclusion about which reward manipulation is
 more trustworthy.
 
-Separately from statistical significance, we computed a coverage
-efficiency metric (newly-discovered grid cells per meter of swarm
-displacement, using \texttt{cafe}'s $800$-cell grid) for all three arms:
-Baseline $16.48$ cells/m (SD $2.22$), LowPenalty $16.54$ cells/m (SD
+As a descriptive complement to the inferential test above -- not a
+substitute for it, and computed from the same three seeds and therefore
+still subject to the same evaluation non-determinism -- we computed a
+coverage efficiency metric (newly-discovered grid cells per meter of
+swarm displacement, using \texttt{cafe}'s $800$-cell grid) for all three
+arms: Baseline $16.48$ cells/m (SD $2.22$), LowPenalty $16.54$ cells/m (SD
 $1.91$, indistinguishable from Baseline), and HighDiscovery $21.29$
 cells/m (SD $2.09$). This is directionally consistent with HighDiscovery
 improving the \emph{efficiency} of movement toward useful cells rather
-than the \emph{quantity} of movement (Section~\ref{sec:discussion}), and
-is unaffected by the significance-test correction above since it is a
-per-episode ratio rather than a between-arm comparison; we report it as
-supporting evidence for the mechanism, not as a substitute for the
-underpowered significance test.
+than the \emph{quantity} of movement (Section~\ref{sec:discussion}); we
+report it as descriptive, suggestive evidence for the mechanism, not as
+an independently-powered confirmation of it.
 
 The ablation results, re-analyzed correctly, support the following,
 considerably more cautious conclusions:
@@ -545,15 +553,19 @@ considerably more cautious conclusions:
     here alters \emph{how} the policy moves, not merely \emph{how much},
     though we caution this is a within-arm descriptive statistic, not an
     independently significance-tested effect.
-    \item \textbf{Evaluation noise, not seed choice, dominates the
-    variance we originally reported.} The seed-to-seed spread we
-    originally reported for LowPenalty (24.6\%--36.9\% across three
-    \emph{distinct} seeds, single pass each) is now known to be
-    substantially driven by re-running the \emph{same} seed and checkpoint
-    (Section~\ref{sec:nondeterminism}), not by genuine sensitivity to the
-    seed argument. The per-seed means in Table~\ref{tab:paired} are our
-    best attempt at separating the two variance sources, but three
-    training seeds is not enough to fully characterize either.
+    \item \textbf{Substantial evaluation noise was observed alongside
+    seed-to-seed variation.} The seed-to-seed spread we originally
+    reported for LowPenalty (24.6\%--36.9\% across three \emph{distinct}
+    seeds, single pass each) turned out to be substantially inflated by
+    re-running the \emph{same} seed and checkpoint
+    (Section~\ref{sec:nondeterminism}), not solely by genuine sensitivity
+    to the seed argument. We do not, however, have a formal
+    variance-components estimate: with only three training seeds we
+    cannot confidently establish that evaluation noise \emph{exceeds}
+    seed-driven variance in general, only that both are present and
+    non-negligible. The per-seed means in Table~\ref{tab:paired} are our
+    best attempt at separating the two, but three training seeds is not
+    enough to fully characterize either.
     \item \textbf{Collision variance is not confined to ACR.} Baseline
     showed 0 wall contacts in 6 of 9 episodes but 6, 19, and 11 contacts
     in the remaining 3 (all from the same repeated-evaluation pass),
@@ -595,8 +607,9 @@ We can, however, offer a more careful reading of what the data are
 \emph{consistent with}. HighDiscovery's point estimate is the larger of
 the two ($28.0\%\to40.5\%$ vs.\ LowPenalty's $28.0\%\to31.0\%$), and its
 coverage-efficiency metric (cells discovered per meter travelled, $21.3$
-vs.\ Baseline's $16.5$) is the one quantity in this ablation that shows a
-clear, consistent separation from Baseline across the analysis. Taken
+vs.\ Baseline's $16.5$) is the one descriptive quantity in this ablation
+that shows the largest separation from Baseline, though it too is drawn
+from the same three seeds and is not itself significance-tested. Taken
 together with the observation that HighDiscovery's mean displacement
 ($15.3\,$m) is \emph{not} meaningfully higher than Baseline's
 ($13.7\,$m), the most defensible reading is: \emph{if} strengthening the
@@ -623,11 +636,15 @@ cells relative to the frontier) that we did not collect in this revision
 and identify as the most valuable follow-up measurement.
 
 Even under the better-performing HighDiscovery configuration, MAPPO's mean
-ACR ($40.5\%$) remains below the Frontier Heuristic's Protocol~B range
-($38.6\%$--$57.0\%$) on comparable seeds, and we have not evaluated
-HighDiscovery beyond a 15-iteration budget or beyond \texttt{cafe}. This
-shows that reward tuning alone, at the budget and seed count tested here,
-does not clearly close the gap:
+ACR ($40.5\%$) remains below the Frontier Heuristic's $57.0\%$ single-pass
+result in Protocol~B (exploratory, $n{=}1$, not statistically matched to
+this ablation) and below its $38.6\%$ median in the separate,
+10-episode-per-condition Protocol~A -- two different evaluation
+protocols on the same environment, neither directly comparable to the
+other's sample size, but both above HighDiscovery's mean. We have not
+evaluated HighDiscovery beyond a 15-iteration budget or beyond
+\texttt{cafe}. This shows that reward tuning alone, at the budget and
+seed count tested here, does not clearly close the gap:
 \begin{itemize}
     \item \textbf{Structural knowledge advantage:} The Frontier Heuristic
     leverages an explicit occupancy grid, A* graph search, and Voronoi
@@ -636,8 +653,9 @@ does not clearly close the gap:
     mapping and coordinated pathfinding simultaneously from reward gradients.
     \item \textbf{Training budget limits:} At $3.15\times 10^4$ transitions
     (45 iterations) and $1.05\times 10^4$ transitions (15 iterations), our
-    budget reflects realistic compute constraints for robotic simulation. We
-    cannot rule out that asymptotic training ($>10^6$ transitions) with
+    budget reflects the compute constraints of this study's experimental
+    setup, not a claim about what budget is typical or sufficient more
+    broadly. We cannot rule out that asymptotic training ($>10^6$ transitions) with
     curriculum learning or reward normalization would eventually escape the
     local optimum.
 \end{itemize}
@@ -676,18 +694,21 @@ consistent across all three seeds while HighDiscovery's larger effect was
 driven by two of three. We regard catching and correcting this error,
 rather than allowing the more publication-flattering pseudoreplicated
 result to stand, as itself part of this paper's contribution. A
-coverage-efficiency metric independent of the significance test does show
-HighDiscovery moving more purposefully per metre travelled than the other
-two arms, which we report as suggestive rather than confirmatory evidence
-against a pure penalty-avoidance account of the original failure mode.
+descriptive coverage-efficiency metric (drawn from the same three seeds,
+and so not an independent test) does show HighDiscovery moving more
+purposefully per metre travelled than the other two arms, which we
+report as suggestive rather than confirmatory evidence against a pure
+penalty-avoidance account of the original failure mode.
 Nonetheless, the classical Frontier Heuristic retained superior performance
 across five diverse environments ($1.2\times$ to $2.0\times$ margin on
 single-pass, $n{=}1$-per-cell estimates that remain exploratory and were
 not re-evaluated in this revision) without requiring policy training. For
 roboticists operating under bounded compute budgets, hand-engineered
-structural coordination remains, on this evidence, a more sample-efficient
-and more reliably measured choice than model-free MARL evaluated under a
-single-episode-per-condition protocol; we recommend that any follow-up
+structural coordination remains, on this evidence, a stronger-performing,
+training-free alternative to model-free MARL at the budgets tested here
+-- we make no direct sample-efficiency comparison, since we did not
+construct a training curve for the heuristic (which requires none) against
+MAPPO's; we recommend that any follow-up
 work adopt repeated-episode evaluation per condition as a baseline
 requirement, a methodological lesson this paper learned the hard way.
 
