@@ -1,7 +1,7 @@
 # MARS: Multi-Agent Robot Swarm Navigation & Area Coverage
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.pending.svg)](https://zenodo.org/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22758286.svg)](https://doi.org/10.5281/zenodo.22758286)
 [![Paper](https://img.shields.io/badge/Paper-Preprint%20PDF-red.svg)](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)
 [![CI Tests](https://img.shields.io/badge/Tests-53%2F53%20Passing-brightgreen.svg)](tests/)
 
@@ -274,6 +274,7 @@ If you use this codebase, simulation environments, trained policies, or benchmar
   author  = {Pandhe, Harsh},
   year    = {2026},
   journal = {arXiv preprint},
+  doi     = {10.5281/zenodo.22758286},
   url     = {https://github.com/harsh-pandhe/MARS}
 }
 ```

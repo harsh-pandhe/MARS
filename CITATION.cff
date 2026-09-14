@@ -8,6 +8,7 @@ version: 1.0.0
 date-released: 2026-09-15
 url: "https://github.com/harsh-pandhe/MARS"
 repository-code: "https://github.com/harsh-pandhe/MARS"
+doi: "10.5281/zenodo.22758286"
 keywords:
   - "multi-agent reinforcement learning"
   - "MAPPO"
@@ -25,4 +26,5 @@ preferred-citation:
       given-names: "Harsh"
   title: "Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"
   year: 2026
+  doi: "10.5281/zenodo.22758286"
   url: "https://github.com/harsh-pandhe/MARS"
