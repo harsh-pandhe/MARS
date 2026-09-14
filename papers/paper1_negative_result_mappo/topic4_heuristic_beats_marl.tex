@@ -98,18 +98,20 @@ generalizations about MARL.
 \section{Introduction}
 Multi-robot area coverage -- driving a team of robots to jointly maximize
 explored floor area -- has a strong, well-understood non-learned baseline:
-frontier-based exploration combined with a path planner and a
-decentralized space-partitioning scheme. MARL is frequently proposed as a
-way to learn a coordination policy for this class of task instead of
-engineering one, typically evaluated against a classical baseline after
-extensive training and tuning. This paper reports the opposite outcome
-under a modest, compute-constrained training budget (we avoid the word
-``realistic,'' since we make no claim about what budget is representative
-of the field; ours is simply what we could afford, and we cannot rule out
-that the same architecture would behave differently at 5--10$\times$ the
-sample budget used here), and treats getting that negative result right
--- including correcting a statistical error we made along the way --
-rather than explaining it away, as the contribution.
+frontier-based exploration \cite{yamauchi1997frontier, burgard2005coordinated}
+combined with a path planner and a decentralized space-partitioning scheme
+\cite{amigoni2017multirobot}. Multi-Agent Reinforcement Learning (MARL)
+\cite{lowe2017maddpg, yu2022mappo} is frequently proposed as a way to learn a
+coordination policy for this class of task instead of engineering one,
+typically evaluated against a classical baseline after extensive training and
+tuning. This paper reports the opposite outcome under a modest,
+compute-constrained training budget (we avoid the word ``realistic,'' since
+we make no claim about what budget is representative of the field; ours is
+simply what we could afford, and we cannot rule out that the same
+architecture would behave differently at 5--10$\times$ the sample budget used
+here), and treats getting that negative result right -- including correcting a
+statistical error we made along the way \cite{henderson2018deep} -- rather
+than explaining it away, as the contribution.
 
 We deliberately narrow the claim to what our evidence supports: this is a
 report of a specific, consistently-observed behavioral failure mode of
@@ -159,11 +161,12 @@ rather than an oversight.
 \noindent\textbf{Random Walk}: uniform random heading changes at fixed
 intervals, CBF-filtered identically to the other two controllers.
 
-\noindent\textbf{MAPPO}: a centralized-critic, shared-policy PPO
-\cite{schulman2017ppo} implementation via Ray RLlib \cite{rllib}. Each
-robot observes a 46-dimensional vector, decomposed exactly as
-$o_i = [\ell_{1:24},\, d_{\text{goal}},\, \theta_{\text{goal}},\, v,\,
-\omega,\, n_{1:9,1:2}] \in \mathbb{R}^{46}$: 24 LiDAR range bins
+\noindent\textbf{MAPPO}: a centralized-critic, shared-policy implementation of Multi-Agent PPO \cite{yu2022mappo, schulman2017ppo} via Ray RLlib \cite{rllib}. Each
+robot observes a 46-dimensional vector:
+\[
+o_i = [\ell_{1:24},\; d_{\text{goal}},\; \theta_{\text{goal}},\; v,\; \omega,\; n_{1:9,1:2}]^\top \in \mathbb{R}^{46}
+\]
+consisting of 24 LiDAR range bins
 ($\ell$), relative distance and bearing to the robot's current goal
 waypoint ($d_{\text{goal}}, \theta_{\text{goal}}$), linear and angular
 velocity ($v, \omega$), and 9 neighbor slots $\times$ 2 features each
@@ -181,6 +184,8 @@ important asymmetry: MAPPO's ``goal'' observation is not the same
 quality of guidance signal the heuristic constructs for itself, and part
 of the heuristic's advantage may be attributable to this richer,
 map-aware target selection rather than to the exploration policy alone.
+Table~\ref{tab:controller-assumptions} summarizes these structural
+and informational differences across all three evaluated controllers.
 The policy is a 2-layer MLP (256 units, ReLU) shared across agents, with a
 separate centralized critic that additionally observes all agents'
 states. The action space is continuous, $a_i=[v_i,\omega_i]$ (linear and
@@ -198,6 +203,30 @@ budget: this is on the order of $3\times10^4$ environment steps, at the
 low end of what is typically reported for PPO-family algorithms on
 continuous-control tasks, and we cannot rule out that additional training
 would change the outcome (see Section~\ref{sec:discussion}).
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\caption{Controller Information and Structural Assumptions. The Frontier Heuristic leverages explicit map, frontier, and planning priors, whereas MAPPO must learn coordination implicitly from local observations and scalar rewards under a bounded sample budget.}
+\label{tab:controller-assumptions}
+\begin{tabular}{lccc}
+\toprule
+Structural Property & Frontier Heuristic & MAPPO & Random Walk \\
+\midrule
+Sensory inputs & 2D LiDAR \& Odometry & 24 LiDAR bins \& Vel. & LiDAR / Odometry \\
+Occupancy grid mapping & \checkmark\ (0.4\,m resolution) & $\times$\ (Implicit in obs.) & $\times$ \\
+Frontier cell detection & \checkmark\ (Grid clustering) & $\times$ & $\times$ \\
+Path routing & \checkmark\ (8-connected A*) & $\times$\ (Direct velocity) & $\times$ \\
+Obstacle inflation & \checkmark\ (Safety radius) & $\times$ & $\times$ \\
+Multi-robot coordination & \checkmark\ (Voronoi bidding) & \checkmark\ (Centralized critic) & $\times$ \\
+Mission state machine & \checkmark\ (\texttt{py\_trees} BT) & $\times$ & $\times$ \\
+Goal waypoint source & Map-aware frontier & Random safe waypoint & Random safe waypoint \\
+Policy learning required & $\times$\ (Zero training) & \checkmark\ (45 / 15 iterations) & $\times$ \\
+Low-level safety filter & \checkmark\ (OSQP CBF) & \checkmark\ (OSQP CBF) & \checkmark\ (OSQP CBF) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Reward Function}
 The per-robot, per-step reward is
@@ -456,13 +485,19 @@ evaluation rollouts in this paper, across every protocol, use greedy
 entry point including the ablation harness); the policy's action output
 is therefore deterministic given an observation, which rules out
 stochastic action sampling as the source of the variance we measured. The
-remaining source is real-time physics and ROS message timing jitter in
-the Gazebo-based evaluation harness -- consistent with repeated
-\texttt{"Moved backwards in time, re-publishing joint transforms"}
-warnings observed in these runs -- rather than the fixed \texttt{--seed}
-argument, which controls Gazebo's pseudo-random number generator but not
-wall-clock-dependent message scheduling or physics-thread race
-conditions. \textbf{This means every single-episode-per-seed
+observed nondeterminism is consistent with real-time physics and ROS
+message-timing effects in the Gazebo-based evaluation harness -- alongside
+repeated warnings (\texttt{"Moved backwards in time,}
+\texttt{re-publishing joint transforms"}) observed in these runs -- rather
+than the fixed \texttt{--seed} argument, which controls Gazebo's
+pseudo-random number generator but not wall-clock-dependent message
+scheduling or physics-thread race conditions \cite{engstrom2020implementation,
+henderson2018deep}. While we
+have not experimentally isolated the exact variance decomposition between
+physics stepping and message queuing, these observations confirm that
+deterministic evaluation in continuous multi-robot simulation requires
+strict lockstep physics rather than seed control alone.
+\textbf{This means every single-episode-per-seed
 number reported elsewhere in this paper, particularly the Protocol~B
 five-world matrix (Table~\ref{tab:5world}), carries this same undisclosed
 uncertainty.} In response, we re-evaluated the Baseline and HighDiscovery
@@ -608,8 +643,14 @@ fully deterministic at fixed seed and checkpoint
 (Section~\ref{sec:nondeterminism}) and that our first attempt to correct
 for this via a 9-episode Welch's-$t$ analysis was itself statistically
 invalid (pseudoreplication; Section~\ref{sec:corrected-stats}), the
-corrected $n=3$ paired analysis shows neither manipulation reaches
-significance, so we cannot claim confirmed support for the original
+corrected $n=3$ paired analysis shows that neither reward manipulation
+reached statistical significance at the three independent training seeds we
+could afford (LowPenalty: paired $t=4.11, p=0.054$; HighDiscovery: paired
+$t=2.93, p=0.10$). We explicitly caution against interpreting $p=0.054$ as
+marginal support or ``near significance'': three independent seeds
+provide insufficient statistical power to distinguish true policy effects
+from seed variance in continuous multi-robot domains \cite{henderson2018deep},
+and we cannot claim confirmed support for the original penalty-avoidance
 hypothesis from either arm.
 
 We can, however, offer a more careful reading of what the data are
@@ -680,7 +721,16 @@ learning versus cross-world transfer. MAPPO was trained exclusively in
 drastically different floor plans (from an open $30\times 50$\,m hall to
 a narrow labyrinth). The Frontier Heuristic maintains consistent advantages
 across all topologies precisely because its graph-search and Voronoi
-formulation is topology-agnostic, requiring zero retraining.
+\subsection{Limitations}
+\label{sec:limitations}
+We summarize the primary methodological and empirical limitations of this study:
+\begin{enumerate}
+    \item \textbf{Training budget bounds:} The MAPPO policy was trained for 45 iterations ($3.15\times 10^4$ transitions) in Protocol~A and 15 iterations ($1.05\times 10^4$ transitions) in Protocol~C. While sufficient to reveal the penalty-dominated low-displacement mode, we cannot establish whether asymptotic training ($>10^6$ transitions) or dense curriculum shaping would overcome this local optimum.
+    \item \textbf{Controller information asymmetry:} The Frontier Heuristic relies on global occupancy grid mapping, frontier clustering, and 8-connected A* search, whereas MAPPO is restricted to local 24-bin LiDAR ranges and random safe waypoints (Table~\ref{tab:controller-assumptions}). Our comparison evaluates the performance gap between an engineered, map-aware controller and a learned local reactive policy, rather than an information-symmetric benchmark.
+    \item \textbf{Single-domain training and zero-shot transfer:} The MAPPO policy was trained exclusively in \texttt{cafe}. Performance in \texttt{warehouse}, \texttt{depot}, \texttt{office}, and \texttt{maze} represents zero-shot cross-world generalization ($n{=}1$, exploratory) rather than per-environment specialized learning.
+    \item \textbf{Safety filter intervention dynamics:} While all controllers share an identical OSQP unicycle Control Barrier Function (CBF) filter, intervention frequency, duration, and magnitude were not logged. We cannot rule out that the CBF filter selectively overrides MAPPO's requested velocities more frequently than the heuristic's.
+    \item \textbf{Statistical sample size:} Resource constraints restricted the paired ablation to $n=3$ independent training seeds. Consequently, neither reward manipulation reaches conventional significance ($\alpha = 0.05$), and the results must be interpreted as diagnostic and exploratory rather than definitive.
+\end{enumerate}
 
 \section{Conclusion}
 Under a fully specified, compute-bounded training protocol, MAPPO
@@ -714,15 +764,26 @@ penalty-avoidance account of the original failure mode.
 Nonetheless, the classical Frontier Heuristic retained superior performance
 across five diverse environments ($1.2\times$ to $2.0\times$ margin on
 single-pass, $n{=}1$-per-cell estimates that remain exploratory and were
-not re-evaluated in this revision) without requiring policy training. For
-roboticists operating under bounded compute budgets, hand-engineered
-structural coordination remains, on this evidence, a stronger-performing,
-training-free alternative to model-free MARL at the budgets tested here
--- we make no direct sample-efficiency comparison, since we did not
-construct a training curve for the heuristic (which requires none) against
-MAPPO's; we recommend that any follow-up
-work adopt repeated-episode evaluation per condition as a baseline
-requirement, a methodological lesson this paper learned the hard way.
+not re-evaluated in this revision) without requiring policy training.
+Under the training budgets, observation structure, and evaluation protocols
+tested here, the hand-engineered Frontier Heuristic outperformed the evaluated
+MAPPO configuration across all environments tested. We make no direct
+sample-efficiency comparison, since we did not construct a training curve for
+the heuristic (which requires none) against MAPPO's, nor do we claim that
+classical planning universally defeats MARL across all possible architectures.
+Rather, for roboticists operating under bounded compute budgets and local
+reactive observations, hand-engineered structural coordination remains, on
+this evidence, a stronger-performing, training-free alternative. Finally, we
+recommend that any follow-up work adopt repeated-episode evaluation per
+condition as a baseline requirement, a methodological lesson this paper
+learned the hard way.
+
+\section*{Data and Code Availability}
+Complete source code, simulation world environments, trained policy checkpoints,
+evaluation logs, and raw ablation telemetry are publicly available in the project
+repository at \url{https://github.com/harsh-pandhe/MARS}. The repository includes
+automated regression tests and scripts to reproduce the training and evaluation
+protocols described in this paper.
 
 \appendix
 \section{Infrastructure Faults Encountered During Training}
@@ -746,14 +807,27 @@ of uncertainty in the 45-iteration run specifically (it does not affect
 the Protocol~C ablation runs, none of which were interrupted). Both faults
 are reported for reproducibility.
 
-\section{Software Versions}
+\section{Hardware and Software Environment}
 \label{sec:versions}
-\begin{center}
+All policy training runs and simulation evaluation rollouts were executed locally on a dedicated workstation with the following hardware specifications:
+\begin{itemize}
+    \item \textbf{CPU:} AMD Ryzen 5 7600 (6 cores, 12 threads @ 3.8\,GHz base, up to 5.1\,GHz boost).
+    \item \textbf{Memory:} 32\,GB DDR5 RAM (5200\,MT/s).
+    \item \textbf{GPU:} NVIDIA GeForce RTX 4060 (8\,GB GDDR6 VRAM, CUDA compute capability 8.9).
+    \item \textbf{Storage:} 1\,TB NVMe PCIe 4.0 SSD.
+\end{itemize}
+The exact software dependency versions used across the environment and RLlib training pipelines are listed in Table~\ref{tab:software-versions}.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Software Stack and Dependency Versions.}
+\label{tab:software-versions}
 \begin{tabular}{ll}
 \toprule
 Component & Version \\
 \midrule
-OS & Ubuntu 24.04 \\
+OS & Ubuntu 24.04 LTS (Linux 6.8 x86\_64) \\
 ROS~2 & Jazzy \\
 Gazebo & Harmonic (gz-sim 8) \\
 Python & 3.12.3 \\
@@ -765,7 +839,7 @@ OSQP & 1.1.3 \\
 NumPy & 2.5.1 \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
 \bibliographystyle{plain}
 \bibliography{topic4_references}
