@@ -1,0 +1,28 @@
+{
+  "purpose": "Correction of a pseudoreplication error in the initial n=9 Welch's t-test analysis. The 9 episodes per ablation arm are NOT 9 independent samples -- 3 of them are repeated evaluations of the identical trained checkpoint per seed. The correct independent unit is the trained checkpoint (one per seed, n=3 per arm).",
+  "flawed_initial_analysis_do_not_cite": {
+    "method": "Welch's t-test treating all 9 episodes as independent",
+    "highdiscovery_vs_baseline": {"t": 4.04, "verdict_INCORRECT": "statistically supported"},
+    "lowpenalty_vs_baseline": {"t": 1.48, "verdict_INCORRECT": "not significant"}
+  },
+  "corrected_analysis": {
+    "method": "Per-seed means (3 repeated evaluations averaged per seed) + paired t-test across n=3 shared seeds",
+    "per_seed_means": {
+      "baseline": {"42": 26.68, "7": 27.28, "99": 30.06, "mean": 28.01},
+      "lowpenalty": {"42": 29.70, "7": 31.43, "99": 31.73, "mean": 30.96},
+      "highdiscovery": {"42": 40.99, "7": 46.06, "99": 34.42, "mean": 40.49}
+    },
+    "paired_diffs_vs_baseline": {
+      "lowpenalty": {"42": 3.02, "7": 4.15, "99": 1.67, "mean": 2.95, "sd": 1.24, "t_df2": 4.11, "p_two_tailed": 0.054},
+      "highdiscovery": {"42": 14.31, "7": 18.78, "99": 4.35, "mean": 12.48, "sd": 7.38, "t_df2": 2.93, "p_two_tailed": 0.10}
+    },
+    "verdict": "Neither reaches p<0.05 at n=3. LowPenalty is numerically CLOSER to significance (p=0.054) than HighDiscovery (p=0.10), the OPPOSITE ranking from the flawed n=9 analysis, because LowPenalty's smaller effect is consistent across all 3 seeds while HighDiscovery's larger effect is driven by 2 of 3 seeds (seed 99 shows almost no gain)."
+  },
+  "coverage_efficiency_cells_per_meter": {
+    "method": "new_cells_discovered / total_distance_m, per episode, cafe grid = 800 cells",
+    "baseline": {"mean": 16.48, "sd": 2.22},
+    "lowpenalty": {"mean": 16.54, "sd": 1.91},
+    "highdiscovery": {"mean": 21.29, "sd": 2.09},
+    "note": "HighDiscovery shows a clear separation here independent of the underpowered significance test above; supporting (not confirming) the hypothesis that HighDiscovery improves movement efficiency/targeting rather than raw displacement."
+  }
+}

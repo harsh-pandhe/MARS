@@ -47,34 +47,49 @@ penalty reduced to $2.0$), and a HighDiscovery configuration (discovery
 bonus raised to $16.0$). While reconciling an internal numerical
 inconsistency, we discovered that this Gazebo-based evaluation harness is
 not fully deterministic even at a fixed seed and a fixed saved checkpoint,
-and subsequently re-evaluated all three arms three independent times each
-across three seeds (42, 7, 99), giving equal statistical footing at
-$n{=}9$ episodes per arm. Under this matched-$n$ analysis, LowPenalty's
-apparent advantage over Baseline ($28.0\%\to31.0\%$) does not clear a
-conventional significance threshold (Welch's $t=1.48$) and is consistent
-with measurement noise. HighDiscovery's advantage ($28.0\%\to40.5\%$,
-$+12.5$ points, Welch's $t=4.04$) does clear that threshold and is, to our
-knowledge, the first statistically-supported positive finding in this
-paper. Notably, HighDiscovery's gain is \emph{not} explained by increased
-displacement (mean $15.3\,$m vs.\ Baseline's $13.7\,$m, well within the
-spread of both), complicating a purely penalty-avoidance account of the
-original failure mode and instead suggesting the reward change improves
-the \emph{efficiency} of movement rather than its quantity.
+and re-evaluated all three arms three independent times each across the
+same three training seeds (42, 7, 99). \textbf{The correct unit of
+statistical independence here is the trained checkpoint (one per seed),
+not the individual evaluation episode}: our first attempt at this
+analysis treated all 9 episodes per arm as independent samples, which is
+pseudoreplication, since three of those nine measurements are repeated
+evaluations of the identical trained policy. Correcting this, we compute
+per-seed means (3 independent training replicates per arm) and a paired
+$t$-test against Baseline across the 3 shared seeds. Under this corrected
+analysis, \emph{neither} manipulation reaches conventional significance
+at $n{=}3$: LowPenalty ($28.0\%\to31.0\%$ mean-of-seed-means, paired
+$t{=}4.11$, $p{=}0.054$) is in fact numerically closer to significance,
+with a smaller, more consistent per-seed effect, than HighDiscovery
+($28.0\%\to40.5\%$, paired $t{=}2.93$, $p{=}0.10$), whose large mean gain
+is driven disproportionately by 2 of 3 seeds (one seed showed almost no
+gain over Baseline). We do not treat either result as confirmed, and we
+report the earlier, statistically overstated $n{=}9$ analysis as an error
+we caught and corrected rather than omitting it. Separately, a
+coverage-efficiency metric (newly-discovered cells per meter travelled)
+shows HighDiscovery at $21.3$ cells/m versus Baseline's $16.5$ and
+LowPenalty's $16.5$ -- directionally consistent with HighDiscovery
+improving movement \emph{efficiency} rather than raw displacement or ACR
+alone, independent of the underpowered significance test.
 \textbf{Contribution.} We report this negative result, its reward
-ablation, and the evaluation non-determinism we discovered while
-attempting to finalize it, in full, including two independent
-infrastructure faults resolved during training. We regard the
-non-determinism finding as at least as important a contribution as the
-ablation's substantive results: it means every single-episode-per-seed
-number in this paper (including the five-world matrix, Table~\ref{tab:5world})
-carries undisclosed uncertainty we did not have the resources to
-fully quantify in this revision, and we report that limitation explicitly
-rather than presenting point estimates as exact. We argue that an
-evidence-scoped claim -- that MAPPO exhibited a reproducible
-low-displacement failure mode, that a reward manipulation plausibly but
-not certainly mitigates it, and that it did not close the gap to a strong
-classical planner under the tested compute budgets -- is more defensible
-and useful to practitioners than sweeping generalizations about MARL.
+ablation, the evaluation non-determinism we discovered, and a
+pseudoreplication error in our own initial statistical analysis that we
+caught and corrected before treating it as a real finding, in full,
+including two independent infrastructure faults resolved during training.
+We regard the non-determinism finding and the pseudoreplication
+correction as at least as important a contribution as the ablation's
+substantive results: they mean every single-episode-per-seed number in
+this paper (including the five-world matrix, Table~\ref{tab:5world}, still
+$n{=}1$ per cell and explicitly exploratory rather than confirmatory) and
+every apparent effect size must be read with real statistical caution, and
+we report that limitation explicitly rather than presenting point
+estimates or underpowered significance tests as settled fact. We argue
+that an evidence-scoped claim -- that MAPPO consistently exhibited a
+low-displacement behavioral failure mode, that a reward manipulation
+plausibly but not statistically confirmedly mitigates it at the
+independent-replicate sample sizes we could afford, and that it did not
+close the gap to a strong classical planner under the tested compute
+budgets -- is more defensible and useful to practitioners than sweeping
+generalizations about MARL.
 \end{abstract}
 
 \section{Introduction}
@@ -85,13 +100,17 @@ decentralized space-partitioning scheme. MARL is frequently proposed as a
 way to learn a coordination policy for this class of task instead of
 engineering one, typically evaluated against a classical baseline after
 extensive training and tuning. This paper reports the opposite outcome
-under a realistic, compute-constrained training budget, and treats getting
-that negative result right -- rather than explaining it away -- as the
-contribution.
+under a modest, compute-constrained training budget (we avoid the word
+``realistic,'' since we make no claim about what budget is representative
+of the field; ours is simply what we could afford, and we cannot rule out
+that the same architecture would behave differently at 5--10$\times$ the
+sample budget used here), and treats getting that negative result right
+-- including correcting a statistical error we made along the way --
+rather than explaining it away, as the contribution.
 
 We deliberately narrow the claim to what our evidence supports: this is a
-report of a specific, reproducible failure mode of one MAPPO
-configuration on one task family, not a general claim about MARL versus
+report of a specific, consistently-observed behavioral failure mode of
+one MAPPO configuration on one task family, not a general claim about MARL versus
 classical planning. Section~\ref{sec:method} details the system, reward,
 and three distinct evaluation protocols we ran (they use different sample
 sizes and address different questions). Section~\ref{sec:results} reports
@@ -259,13 +278,23 @@ the causal mechanism behind the policy's displacement.
 \section{Results}
 \label{sec:results}
 
-\subsection{Protocol B: Five-World Comparison}
-Table~\ref{tab:5world} reports ACR and total swarm displacement from the
-single-seed, five-world matrix.
+\subsection{Protocol B: Exploratory Five-World Comparison (Not a Statistical Result)}
+Table~\ref{tab:5world} reports ACR and total swarm displacement from a
+single-seed, single-episode-per-cell, five-world matrix. Given the
+per-checkpoint evaluation noise we later measured directly in Protocol~C
+(SD up to $\pm 8.4$ points on a single arm, Section~\ref{sec:ablation}),
+an $n{=}1$-per-cell table cannot support a statistical claim, and several
+of the smaller margins below (the $1.2$--$1.3\times$ rows) are plausibly
+within that noise band. We present this table as an \textbf{exploratory}
+indication that the heuristic's advantage is not confined to one
+environment, not as confirmatory evidence with a defensible effect size;
+we did not have the resources in this revision to repeat all 25
+(world $\times$ controller) cells multiple times each, which would be
+required to make this table statistically comparable to Protocol~C.
 
 \begin{table}[h]
 \centering
-\caption{Protocol B: ACR (\%) and total swarm displacement (m), 150-step episodes, $N{=}3$, single seed. Ratios in the last column are Heuristic~/~MAPPO.}
+\caption{Protocol B (exploratory): ACR (\%) and total swarm displacement (m), 150-step episodes, $N{=}3$, single seed, single episode per cell -- not repeated, not statistically tested. Ratios in the last column are Heuristic~/~MAPPO.}
 \label{tab:5world}
 \begin{tabular}{lccccc}
 \toprule
@@ -427,48 +456,104 @@ revision to similarly repeat the five-world Protocol~B matrix, and that
 table's margins should still be read as indicative rather than
 statistically established.
 
-With all three ablation arms now evaluated at equal $n=9$, we computed
-Welch's $t$-test (unequal variances) for each arm against Baseline.
-HighDiscovery's mean ($40.49\%$) exceeds Baseline's ($28.01\%$) by $+12.48$
-points, $t=4.04$ -- a difference roughly four times its own standard
-error, and unlikely to be an artifact of the measurement noise we
-characterized above. LowPenalty's mean ($30.96\%$) exceeds Baseline's by
-only $+2.95$ points, $t=1.48$, which does not clear a conventional
-significance threshold and is consistent with no real effect once
-evaluation noise is accounted for. We therefore now have direct
-statistical, not just qualitative, support for treating HighDiscovery as a
-real effect and LowPenalty as statistically indistinguishable from noise
-at this sample size.
+With all three ablation arms now evaluated three times each, our first
+analysis treated all 9 episodes per arm as independent samples and
+computed Welch's $t$-test against Baseline, obtaining $t=4.04$ for
+HighDiscovery and $t=1.48$ for LowPenalty. \textbf{This analysis is
+incorrect, and we report the error rather than silently fixing it and
+moving on.} Three of each arm's nine episodes are repeated evaluations of
+the \emph{identical trained checkpoint} for a given seed -- they are not
+independent training replicates, and treating them as nine independent
+samples is pseudoreplication: it inflates the effective sample size and
+therefore understates the true uncertainty in the estimated effect.
 
-The ablation results, now evaluated at matched statistical power across
-all three arms, support the following conclusions:
+\subsubsection{Corrected Analysis: Per-Seed Means, $n=3$}
+\label{sec:corrected-stats}
+The correct independent experimental unit in this design is the
+\emph{trained checkpoint}, one per seed, of which we have exactly three
+per arm. We therefore aggregate each seed's three repeated evaluations
+into a single per-seed mean, and compare arms using a paired $t$-test
+across the three shared seeds (Table~\ref{tab:paired}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Per-seed mean ACR (\%), averaged over 3 repeated evaluations per seed, and paired differences vs.\ Baseline.}
+\label{tab:paired}
+\begin{tabular}{lcccc}
+\toprule
+Seed & Baseline & LowPenalty & HighDiscovery & $\Delta_{\text{LP}}$ / $\Delta_{\text{HD}}$ \\
+\midrule
+42 & 26.68 & 29.70 & 40.99 & $+3.02$ / $+14.31$ \\
+7  & 27.28 & 31.43 & 46.06 & $+4.15$ / $+18.78$ \\
+99 & 30.06 & 31.73 & 34.42 & $+1.67$ / $+4.35$ \\
+\midrule
+\textbf{Mean} & \textbf{28.01} & \textbf{30.96} & \textbf{40.49} & \textbf{$+2.95$ / $+12.48$} \\
+\textbf{SD of paired diffs} & -- & -- & -- & \textbf{$1.24$ / $7.38$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With $n=3$ independent seeds, paired $t$-tests give: LowPenalty vs.\
+Baseline, $t=4.11$, $p=0.054$; HighDiscovery vs.\ Baseline, $t=2.93$,
+$p=0.10$ (both two-tailed, $df=2$). \textbf{Neither reaches the
+conventional $\alpha=0.05$ threshold.} More strikingly, this corrected
+analysis \emph{reverses} the qualitative ranking from our initial,
+flawed $n=9$ analysis: LowPenalty, not HighDiscovery, is numerically
+closer to significance, because its per-seed effect is small but
+consistent across all three seeds (SD of paired differences $1.24$),
+whereas HighDiscovery's much larger mean effect is driven
+disproportionately by two of three seeds (seed 99's gain, $+4.35$ points,
+is an order of magnitude smaller than seeds 42 and 7's), giving it far
+higher between-seed variance (SD $7.38$) despite the larger point
+estimate. We regard this reversal as the paper's clearest illustration of
+why the choice of statistical unit matters more than the choice of test:
+had we not caught the pseudoreplication error, we would have published
+the opposite qualitative conclusion about which reward manipulation is
+more trustworthy.
+
+Separately from statistical significance, we computed a coverage
+efficiency metric (newly-discovered grid cells per meter of swarm
+displacement, using \texttt{cafe}'s $800$-cell grid) for all three arms:
+Baseline $16.48$ cells/m (SD $2.22$), LowPenalty $16.54$ cells/m (SD
+$1.91$, indistinguishable from Baseline), and HighDiscovery $21.29$
+cells/m (SD $2.09$). This is directionally consistent with HighDiscovery
+improving the \emph{efficiency} of movement toward useful cells rather
+than the \emph{quantity} of movement (Section~\ref{sec:discussion}), and
+is unaffected by the significance-test correction above since it is a
+per-episode ratio rather than a between-arm comparison; we report it as
+supporting evidence for the mechanism, not as a substitute for the
+underpowered significance test.
+
+The ablation results, re-analyzed correctly, support the following,
+considerably more cautious conclusions:
 \begin{enumerate}
-    \item \textbf{HighDiscovery's effect is statistically supported;
-    LowPenalty's is not.} At $n{=}9$ per arm, HighDiscovery exceeds
-    Baseline by $+12.48$ points (Welch's $t=4.04$), while LowPenalty
-    exceeds Baseline by only $+2.95$ points ($t=1.48$, not significant at
-    conventional thresholds). Strengthening the positive reward signal is
-    the manipulation we have actual statistical grounds to trust; weakening
-    the negative one, under this budget and these coefficient choices, is
-    not distinguishable from noise.
-    \item \textbf{The displacement account is incomplete.} HighDiscovery's
-    coverage gain is \emph{not} explained by increased displacement: its
-    mean displacement ($15.27\,$m) is not meaningfully higher than
-    Baseline's ($13.69\,$m) relative to the spread in both. This indicates
-    the coverage gain comes from more efficiently \emph{targeted} movement
-    toward undiscovered cells rather than simply moving more -- a
-    mechanism our original penalty-avoidance-only hypothesis did not
-    anticipate, and one that reward shaping may be altering trajectory
-    efficiency rather than raw locomotion magnitude.
+    \item \textbf{Neither reward manipulation reaches statistical
+    significance at the number of independent training replicates we
+    could afford ($n=3$ seeds).} LowPenalty ($p=0.054$) and HighDiscovery
+    ($p=0.10$) are both plausible but unconfirmed. We explicitly retract
+    the earlier claim, based on a pseudoreplicated analysis, that
+    HighDiscovery was ``statistically supported'' while LowPenalty was
+    not; the corrected analysis suggests, if anything, the opposite
+    ordering by test statistic, though neither is conclusive.
+    \item \textbf{Coverage efficiency, not raw displacement, best
+    distinguishes HighDiscovery from the other two arms.} HighDiscovery's
+    cells-per-meter efficiency ($21.3$) is meaningfully higher than both
+    Baseline's and LowPenalty's (both $\approx 16.5$), while its raw mean
+    displacement ($15.27\,$m) is not meaningfully higher than Baseline's
+    ($13.69\,$m). This is our best available evidence that reward shaping
+    here alters \emph{how} the policy moves, not merely \emph{how much},
+    though we caution this is a within-arm descriptive statistic, not an
+    independently significance-tested effect.
     \item \textbf{Evaluation noise, not seed choice, dominates the
     variance we originally reported.} The seed-to-seed spread we
     originally reported for LowPenalty (24.6\%--36.9\% across three
     \emph{distinct} seeds, single pass each) is now known to be
     substantially driven by re-running the \emph{same} seed and checkpoint
     (Section~\ref{sec:nondeterminism}), not by genuine sensitivity to the
-    seed argument. With 9 episodes per arm we can report a standard
-    deviation, but we still cannot cleanly separate seed-driven variance
-    from evaluation-noise variance within that figure.
+    seed argument. The per-seed means in Table~\ref{tab:paired} are our
+    best attempt at separating the two variance sources, but three
+    training seeds is not enough to fully characterize either.
     \item \textbf{Collision variance is not confined to ACR.} Baseline
     showed 0 wall contacts in 6 of 9 episodes but 6, 19, and 11 contacts
     in the remaining 3 (all from the same repeated-evaluation pass),
@@ -497,25 +582,45 @@ arises from a severe asymmetry between dense, immediate negative penalties
 ($-8.0$ for wall contact, $-10.0$ for agent proximity) and delayed,
 incremental positive rewards ($4.0$ per newly discovered grid cell), such
 that relieving the penalty would let the policy move more and thereby
-cover more. Having discovered that our evaluation harness is not fully
-deterministic even at fixed seed and checkpoint
-(Section~\ref{sec:nondeterminism}), we re-evaluated all three ablation
-arms at matched $n{=}9$ and can now report that LowPenalty's coverage
-increase ($28.0\%\to31.0\%$) does not clear a conventional significance
-threshold against Baseline (Welch's $t=1.48$) and should not be treated as
-confirmed evidence for the original hypothesis.
+cover more. Having discovered both that our evaluation harness is not
+fully deterministic at fixed seed and checkpoint
+(Section~\ref{sec:nondeterminism}) and that our first attempt to correct
+for this via a 9-episode Welch's-$t$ analysis was itself statistically
+invalid (pseudoreplication; Section~\ref{sec:corrected-stats}), the
+properly-powered $n=3$ paired analysis shows neither manipulation reaches
+significance, so we cannot claim confirmed support for the original
+hypothesis from either arm.
 
-HighDiscovery's coverage gain ($28.0\%\to40.5\%$, $+12.5$ points, Welch's
-$t=4.04$) does clear that threshold and is our best evidence, now with
-direct statistical support rather than a single-pass point estimate, that
-\emph{some} reward manipulation helps. What it does \emph{not} show, and
-what our original hypothesis predicted it would, is a displacement
-increase: its mean displacement ($15.3\,$m) is not meaningfully higher
-than Baseline's ($13.7\,$m) relative to the spread in both. The effect is
-therefore more consistent with the positive discovery signal directly
-rewarding useful, targeted movement than with the policy simply becoming
-less risk-averse and moving more in general -- a mechanism distinct from,
-and not anticipated by, our original penalty-avoidance-only hypothesis.
+We can, however, offer a more careful reading of what the data are
+\emph{consistent with}. HighDiscovery's point estimate is the larger of
+the two ($28.0\%\to40.5\%$ vs.\ LowPenalty's $28.0\%\to31.0\%$), and its
+coverage-efficiency metric (cells discovered per meter travelled, $21.3$
+vs.\ Baseline's $16.5$) is the one quantity in this ablation that shows a
+clear, consistent separation from Baseline across the analysis. Taken
+together with the observation that HighDiscovery's mean displacement
+($15.3\,$m) is \emph{not} meaningfully higher than Baseline's
+($13.7\,$m), the most defensible reading is: \emph{if} strengthening the
+discovery signal has a real effect, it is more consistent with the policy
+moving more \emph{purposefully} toward undiscovered cells than with it
+simply becoming less risk-averse and moving more in general. We list this
+as our leading hypothesis rather than a confirmed mechanism, alongside
+three competing explanations we cannot yet rule out with the data
+collected: (i) the larger discovery bonus may simply improve credit
+assignment by making an already-sparse reward signal proportionally less
+sparse relative to the fixed step and collision penalties, independent of
+any change in \emph{targeting} behavior; (ii) the reward-coefficient
+change may shift the effective exploration-exploitation balance under a
+fixed entropy coefficient, altering which regions of state space the
+policy visits during the (short) training run rather than altering
+learned targeting behavior at evaluation time; and (iii) the effect may
+be substantially driven by 2 of the 3 training seeds
+(Table~\ref{tab:paired}), in which case it may reflect a property of
+those two particular training runs rather than a general property of the
+reward coefficient. Distinguishing these requires either many more
+training seeds, or direct diagnostics (e.g.\ the CBF filter's
+intervention rate and magnitude, and the spatial distribution of visited
+cells relative to the frontier) that we did not collect in this revision
+and identify as the most valuable follow-up measurement.
 
 Even under the better-performing HighDiscovery configuration, MAPPO's mean
 ACR ($40.5\%$) remains below the Frontier Heuristic's Protocol~B range
@@ -555,22 +660,30 @@ observed'' rather than ``reproducible'' deliberately, since we also found
 that this evaluation harness is not numerically reproducible at the level
 of individual episode outcomes (Section~\ref{sec:nondeterminism}), even
 though the qualitative behavior was. Attempting to isolate the failure's
-cause via a three-arm reward ablation evaluated at matched statistical
-power ($n{=}9$ episodes per arm after discovering and correcting for this
-non-determinism), we found that strengthening the discovery bonus
-produced a statistically supported coverage gain (mean ACR
-$28.0\%\to40.5\%$, Welch's $t=4.04$) via a mechanism other than increased
-displacement -- revising our original penalty-avoidance-only hypothesis --
-while weakening the collision penalty produced a smaller, statistically
-unsupported gain (mean ACR $28.0\%\to31.0\% \pm 4.5$, $t=1.48$) that does
-not clearly exceed the measurement noise of our own evaluation harness, a
-limitation we discovered only while reconciling an internal inconsistency
-during this revision, corrected by re-evaluating every arm rather than
-leaving the discrepancy unresolved, and report in full rather than
-concealing. Nonetheless, the classical Frontier Heuristic
-retained superior performance across five diverse environments
-($1.2\times$ to $2.0\times$ margin on single-pass estimates now known to
-carry unquantified uncertainty) without requiring policy training. For
+cause via a three-arm reward ablation, we made and then caught a
+statistical error: an initial analysis treating each arm's 9 repeated
+evaluation episodes as independent samples (pseudoreplication, since only
+3 of those 9 per arm come from independent trained checkpoints) suggested
+strengthening the discovery bonus produced a ``statistically supported''
+coverage gain while weakening the collision penalty did not. The
+corrected analysis, using the trained checkpoint (one per seed, $n=3$) as
+the unit of independence, shows \emph{neither} manipulation reaches
+conventional significance (LowPenalty: mean ACR $28.0\%\to31.0\%$,
+paired $t=4.11$, $p=0.054$; HighDiscovery: mean ACR $28.0\%\to40.5\%$,
+paired $t=2.93$, $p=0.10$) -- and, strikingly, reverses which arm is
+numerically closer to significance, since LowPenalty's smaller effect was
+consistent across all three seeds while HighDiscovery's larger effect was
+driven by two of three. We regard catching and correcting this error,
+rather than allowing the more publication-flattering pseudoreplicated
+result to stand, as itself part of this paper's contribution. A
+coverage-efficiency metric independent of the significance test does show
+HighDiscovery moving more purposefully per metre travelled than the other
+two arms, which we report as suggestive rather than confirmatory evidence
+against a pure penalty-avoidance account of the original failure mode.
+Nonetheless, the classical Frontier Heuristic retained superior performance
+across five diverse environments ($1.2\times$ to $2.0\times$ margin on
+single-pass, $n{=}1$-per-cell estimates that remain exploratory and were
+not re-evaluated in this revision) without requiring policy training. For
 roboticists operating under bounded compute budgets, hand-engineered
 structural coordination remains, on this evidence, a more sample-efficient
 and more reliably measured choice than model-free MARL evaluated under a
