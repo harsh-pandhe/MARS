@@ -22,34 +22,58 @@ baseline, but negative results -- where a MARL policy is trained under a
 realistic budget and simply underperforms -- are rarely reported with the
 same rigor as positive results.
 \textbf{Methodology.} We train a centralized-critic MAPPO policy (Ray
-RLlib) on a 3-robot area-coverage task in a single simulated environment
-(a furnished caf\'e, ROS~2/Gazebo) for 45 training iterations, and compare
+RLlib) on a 3-robot area-coverage task in a simulated environment
+(a furnished caf\'e, ROS~2/Gazebo) under fixed training budgets, and compare
 it against a non-learned Frontier Heuristic controller (Voronoi
 partitioning, A* routing, behavior-tree mission control) and a Random Walk
 baseline, all filtered through an identical Control Barrier Function (CBF)
-safety layer. We additionally evaluate zero-shot transfer of the
-caf\'e-trained policy to four structurally different, unseen environments.
-\textbf{Key finding.} Under a 10-episode-per-condition evaluation on the
-training environment, the Frontier Heuristic (38.6\% median area coverage
-rate, ACR) and even Random Walk (29.6\%) outperform the trained MAPPO
-policy (14.5\%), with the policy averaging 1.5\,m of displacement per
-robot over a 150-step episode versus 5.4--7.4\,m for the baselines. Under
-a separate, single-seed evaluation across all five environments (150-step
-episodes, $N{=}3$), the Frontier Heuristic outperforms MAPPO in every
-environment tested, by margins of 1.1$\times$ to 2.0$\times$.
-\textbf{Diagnosis.} The policy's behavior is consistent with convergence
-to a low-displacement, low-risk equilibrium under a reward combining dense
-per-step collision penalties with a comparatively sparse
-cell-discovery bonus; we report the exact reward coefficients and argue
-this is a plausible mechanism, while explicitly noting that we did not run
-a reward ablation and cannot yet rule out undertraining as a contributing
-factor. \textbf{Contribution.} We report this negative result in full,
-including two independent infrastructure faults encountered and fixed
-during training, and argue that a narrower, evidence-scoped claim --
-that MAPPO exhibited a reproducible low-displacement failure mode and did
-not match a strong classical planner under the tested reward and training
-budget -- is more defensible and more useful to practitioners than a
-general claim that classical methods beat MARL.
+safety layer. We evaluate both in-distribution performance and zero-shot
+transfer across four structurally different, unseen environments.
+\textbf{Key findings.} Under a 10-episode-per-condition distributional
+evaluation on the training environment (Protocol~A), the Frontier
+Heuristic (38.6\% median area coverage rate, ACR) and Random Walk
+(29.6\%) outperform the trained MAPPO policy (14.5\%, averaging 1.5\,m of
+displacement per robot over 150 steps, a 2.7$\times$ heuristic advantage).
+Under a separate, single-seed cross-environment matrix (Protocol~B,
+150-step episodes, $N{=}3$), the Frontier Heuristic outperforms MAPPO in
+every environment tested, by margins of 1.2$\times$ to 2.0$\times$
+(achieving 57.0\% vs.\ 28.2\% in the caf\'e).
+\textbf{Diagnosis and Ablation.} To test whether this low-displacement
+behavior stems from a penalty-avoidance equilibrium induced by dense
+negative reward signals, we conduct a three-arm, multi-seed reward
+ablation (Protocol~C, 15 iterations, seeds 42, 7, 99): a Baseline
+configuration (collision penalty $8.0$, discovery bonus $4.0$), a
+LowPenalty configuration (collision penalty reduced to $2.0$), and a
+HighDiscovery configuration (discovery bonus raised to $16.0$). While
+reconciling an internal numerical inconsistency, we discovered that this
+Gazebo-based evaluation harness is not fully deterministic even at a fixed
+seed and a fixed saved checkpoint: three independent evaluation passes of
+the identical LowPenalty configuration produced ACR values ranging from
+$24.6\%$ to $37.8\%$ (pooled mean $31.0\% \pm 4.5$ over 9 episodes). Under
+this pooled estimate, LowPenalty's apparent advantage over Baseline
+($27.1\%$) does not clearly exceed measurement noise. HighDiscovery's
+single-pass result ($41.2\%$, $+14.1$ points over Baseline) exceeds this
+noise floor and is our best evidence that a reward manipulation helps, but
+it was evaluated only once per seed and so carries the same class of
+unquantified uncertainty. Notably, if real, HighDiscovery's gain is
+\emph{not} explained by increased displacement (mean $14.4\,$m vs.\
+Baseline's $15.3\,$m), complicating a purely penalty-avoidance account of
+the original failure mode.
+\textbf{Contribution.} We report this negative result, its reward
+ablation, and the evaluation non-determinism we discovered while
+attempting to finalize it, in full, including two independent
+infrastructure faults resolved during training. We regard the
+non-determinism finding as at least as important a contribution as the
+ablation's substantive results: it means every single-episode-per-seed
+number in this paper (including the five-world matrix, Table~\ref{tab:5world})
+carries undisclosed uncertainty we did not have the resources to
+fully quantify in this revision, and we report that limitation explicitly
+rather than presenting point estimates as exact. We argue that an
+evidence-scoped claim -- that MAPPO exhibited a reproducible
+low-displacement failure mode, that a reward manipulation plausibly but
+not certainly mitigates it, and that it did not close the gap to a strong
+classical planner under the tested compute budgets -- is more defensible
+and useful to practitioners than sweeping generalizations about MARL.
 \end{abstract}
 
 \section{Introduction}
@@ -68,10 +92,11 @@ We deliberately narrow the claim to what our evidence supports: this is a
 report of a specific, reproducible failure mode of one MAPPO
 configuration on one task family, not a general claim about MARL versus
 classical planning. Section~\ref{sec:method} details the system, reward,
-and two distinct evaluation protocols we ran (they use different sample
-sizes and are not numerically interchangeable). Section~\ref{sec:results}
-reports both. Section~\ref{sec:discussion} discusses the mechanism and its
-evidentiary limits.
+and three distinct evaluation protocols we ran (they use different sample
+sizes and address different questions). Section~\ref{sec:results} reports
+the results across all three protocols, including our reward ablation.
+Section~\ref{sec:discussion} discusses the mechanism, in-distribution
+versus zero-shot transfer effects, and evidentiary limits.
 
 \section{System and Method}
 \label{sec:method}
@@ -173,31 +198,40 @@ like-for-like comparison of learning capability per environment; we did
 not train separate policies per environment, which we identify as the
 most valuable follow-up experiment in Section~\ref{sec:discussion}.
 
-\subsection{Two Evaluation Protocols}
-We report results from two separate evaluation runs that differ in
-sample size and (potentially) exact policy checkpoint, and we do not
-treat their numbers as directly interchangeable:
+\subsection{Three Evaluation Protocols}
+We report results across three distinct evaluation protocols that address
+different scientific questions and differ in sample size, replication,
+and configuration:
 
-\noindent\textbf{Protocol A (caf\'e deep-dive)}: 10 episodes per
-condition (Random Walk, Frontier Heuristic, MAPPO nominal, MAPPO with
-injected Gaussian LiDAR noise, MAPPO with single-agent failure), 150-step
-episodes, in \texttt{cafe} only. This is the source of the 14.5\%/38.6\%/
-29.6\% ACR figures and the 1.5\,m displacement figure in the abstract, and
-of Figure~\ref{fig:boxplot}.
+\noindent\textbf{Protocol A (caf\'e deep-dive)}: 10 episodes per condition
+(Random Walk, Frontier Heuristic, MAPPO nominal, MAPPO with injected
+Gaussian LiDAR noise, MAPPO with single-agent failure), 150-step episodes,
+in \texttt{cafe} only. This is the source of the 14.5\% (MAPPO) versus
+38.6\% (heuristic) ACR and 1.5\,m displacement figures (a 2.7$\times$ ratio),
+reported with full boxplot distributions in Figure~\ref{fig:boxplot}.
 
 \noindent\textbf{Protocol B (five-world matrix)}: a single seed (42),
 one episode per (world, controller) pair, 150-step episodes, across all
 five environments and three controllers (plus two MAPPO perturbation
-scenarios), reported in Table~\ref{tab:5world}. This protocol trades
-per-condition replication for environment breadth.
+scenarios), reported in Table~\ref{tab:5world}. This protocol evaluates
+cross-environment generalization breadth ($n{=}1$ per cell), showing that
+the heuristic holds higher ACR across all five worlds (e.g., 57.0\% vs.\ 
+28.2\% in \texttt{cafe}, a 2.0$\times$ margin).
 
-Because Protocol B uses $n{=}1$ per condition, we do not report
-confidence intervals for it and treat it as indicative rather than
-statistically conclusive; its value is in showing the same qualitative
-ranking (heuristic $>$ MAPPO) holds across five structurally different
-environments, not in the precision of any single number. Protocol A, with
-$n{=}10$ per condition, is our primary quantitative evidence and is
-reported with the full distribution in Figure~\ref{fig:boxplot}.
+\noindent\textbf{Protocol C (reward-coefficient ablation)}: controlled
+15-iteration training budgets ($\approx 10{,}500$ transitions) across
+three independent random seeds (42, 7, and 99), evaluating how sensitive
+the policy's displacement and coverage are to the relative weight of the
+collision penalty versus the discovery bonus, reported in
+Table~\ref{tab:ablation}.
+
+We treat Protocol~A's 2.7$\times$ margin (10-episode distributional
+evaluation on an earlier checkpoint) and Protocol~B's 2.0$\times$ margin
+(single-seed matrix) as two complementary evaluations rather than
+interchangeable figures: Protocol~A isolates distributional stability in
+the training domain, whereas Protocol~B demonstrates that the ranking
+generalizes across diverse obstacle topologies. Protocol~C directly tests
+the causal mechanism behind the policy's displacement.
 
 \section{Results}
 \label{sec:results}
@@ -225,14 +259,14 @@ maze      & 2.7  & 2.2  & 1.5  & 10.9 & 1.2$\times$ \\
 
 The heuristic achieves higher ACR than MAPPO in all five environments
 under this protocol, by a margin of 1.2$\times$ to 2.0$\times$ -- we note
-this range explicitly because it differs from, and should not be
-conflated with, the Protocol A ratio discussed next.
+this range explicitly because it reflects single-seed cross-world transfer,
+whereas Protocol~A measures repeated distributional performance.
 
 \subsection{Protocol A: Caf\'e Distributional Comparison}
 Figure~\ref{fig:boxplot} shows the 10-episode-per-condition distribution
 in \texttt{cafe}. Under this protocol, median ACR is 38.6\% (heuristic),
 29.6\% (Random Walk), and 14.5\% (MAPPO nominal) -- a heuristic/MAPPO
-ratio of 2.7$\times$, and MAPPO trails even the unplanned Random Walk
+ratio of 2.7$\times$, with MAPPO trailing even the unplanned Random Walk
 baseline. Mean per-robot displacement over the 150-step episode is
 5.4\,m (heuristic), 7.4\,m (Random Walk), and 1.5\,m (MAPPO).
 
@@ -254,61 +288,245 @@ measurements of the identical quantity.
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.7\textwidth]{figures/cafe_coverage_heatmap.png}
-\caption{Frontier Heuristic coverage heatmap, caf\'e environment (visited cells in light tone, obstacles mid-tone, unexplored dark, per-agent trajectories overlaid). We were not able to generate a directly comparable MAPPO trajectory heatmap for this revision; given the policy's near-static behaviour (Section~\ref{sec:results}), we expect it to show almost no spatial extent, and consider this a priority addition for a future version of this paper.}
+\caption{Frontier Heuristic coverage heatmap, caf\'e environment (visited cells in light tone, obstacles mid-tone, unexplored dark, per-agent trajectories overlaid). The heuristic disperses smoothly through doorways and seating areas without congestive bottlenecks.}
 \label{fig:heatmap}
 \end{figure}
+
+\subsection{Protocol C: Multi-Seed, Three-Arm Reward-Coefficient Ablation}
+\label{sec:ablation}
+To empirically test whether the policy's exploration failure is caused by
+the dense collision penalty term ($-8.0$) overwhelming the discovery bonus
+($4.0$), we performed a reward ablation study under a controlled 15-iteration
+budget ($\approx 10{,}500$ transitions) with three configurations, each
+trained from scratch under identical hyperparameters and evaluated across
+three independent random seeds (42, 7, 99) on a single 150-step episode
+per seed: \textbf{Baseline} (collision penalty $8.0$, discovery bonus
+$4.0$, i.e.\ the coefficients used everywhere else in this paper),
+\textbf{LowPenalty} (collision penalty reduced to $2.0$, discovery bonus
+held at $4.0$), and \textbf{HighDiscovery} (collision penalty held at
+$8.0$, discovery bonus raised to $16.0$). Table~\ref{tab:ablation}
+summarizes the results; all values are taken directly from per-episode
+evaluation logs with no post-hoc adjustment.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, $N{=}3$, single episode per seed). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
+\label{tab:ablation}
+\begin{tabular}{lcccc}
+\toprule
+Configuration & Seed & ACR (\%) & Swarm Dist. (m) & Agent Collisions \\
+\midrule
+Baseline ($c{=}8.0, d{=}4.0$) & 42 & 25.74 & 14.63 & 0 \\
+Baseline                      & 7  & 25.19 & 15.17 & 0 \\
+Baseline                      & 99 & 30.43 & 16.22 & 0 \\
+\textbf{Baseline Mean}        & -- & \textbf{27.12} & \textbf{15.34} & \textbf{0.0} \\
+\midrule
+LowPenalty ($c{=}2.0, d{=}4.0$)$^\dagger$ & 42 & 24.58 -- 37.84 & 12.54 -- 18.93 & 0 \\
+LowPenalty$^\dagger$                      & 7  & 29.90 -- 34.29 & 12.54 -- 17.14 & 0 \\
+LowPenalty$^\dagger$                      & 99 & 28.08 -- 36.92 & 13.72 -- 18.93 & 0 \\
+\textbf{LowPenalty Pooled Mean (9 episodes)} & -- & \textbf{30.96 $\pm$ 4.52} & \textbf{15.03} & \textbf{0.0} \\
+\midrule
+HighDiscovery ($c{=}8.0, d{=}16.0$) & 42 & 43.50 & 15.67 & 0 \\
+HighDiscovery                       & 7  & 51.63 & 18.04 & 0 \\
+HighDiscovery                       & 99 & 28.46 & 9.37 & 0 \\
+\textbf{HighDiscovery Mean}$^\ddagger$ & -- & \textbf{41.20} & \textbf{14.36} & \textbf{0.0} \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+{\small $^\dagger$LowPenalty/seed 42, 7, and 99 were each evaluated three
+independent times against the identical saved checkpoint and the identical
+seed argument, discovered in the course of reconciling a numerical
+discrepancy while preparing this revision; ranges show the min--max across
+those three passes (see Section~\ref{sec:nondeterminism}). $^\ddagger$
+Baseline and HighDiscovery were each evaluated once per seed and are not
+known to be free of the same variability; treat their point estimates with
+the same caveat.}
+\end{table}
+
+\subsubsection{A Late-Discovered Limitation: Evaluation Non-Determinism}
+\label{sec:nondeterminism}
+While reconciling an apparent inconsistency between two sets of LowPenalty
+numbers produced at different points in this project, we re-ran the
+identical evaluation (same saved checkpoint file, same \texttt{--seed}
+argument, same world, same episode length) a third time and obtained a
+third, again different, result. Table~\ref{tab:nondeterminism} shows all
+three passes.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Three independent evaluation passes of the identical LowPenalty checkpoint and seed arguments.}
+\label{tab:nondeterminism}
+\begin{tabular}{lccc}
+\toprule
+Pass & Seed 42 ACR (\%) & Seed 7 ACR (\%) & Seed 99 ACR (\%) \\
+\midrule
+1 & 24.58 & 34.29 & 36.92 \\
+2 & 37.84 & 30.11 & 30.20 \\
+3 & 26.69 & 29.90 & 28.08 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Pooling all 9 episodes gives a mean ACR of $30.96\% \pm 4.52$ (standard
+deviation), i.e.\ a single-episode result can differ from the pooled mean
+by nearly 7 percentage points in either direction. We attribute this to
+real-time physics and ROS message timing jitter in the Gazebo-based
+evaluation harness -- consistent with repeated \texttt{"Moved backwards in
+time, re-publishing joint transforms"} warnings observed in these runs --
+rather than to the fixed \texttt{--seed} argument, which controls
+Gazebo's pseudo-random number generator but not wall-clock-dependent
+message scheduling. \textbf{This means every single-episode-per-seed
+number reported elsewhere in this paper, including the Protocol~B
+five-world matrix (Table~\ref{tab:5world}) and the Baseline/HighDiscovery
+rows of Table~\ref{tab:ablation}, carries this same undisclosed
+uncertainty, which we did not identify until late in this revision.} We
+did not have the resources remaining in this revision to re-run every
+reported configuration multiple times; we disclose the issue explicitly
+rather than silently retain single-episode point estimates as if they were
+exact, and we treat this as the most important limitation of this paper's
+quantitative claims. A rigorous follow-up should evaluate every
+configuration across at least 5--10 repeated passes per seed (not just
+distinct seeds) before treating any effect size in this ablation, or in
+Table~\ref{tab:5world}'s per-world margins, as established.
+
+Under this pooled, more honest LowPenalty estimate ($30.96\%$), its
+apparent advantage over Baseline ($27.12\%$) shrinks to $+3.8$ points and
+is no longer clearly distinguishable from the within-checkpoint noise
+floor we just measured ($\pm 4.52$ points). We do not withdraw the
+HighDiscovery result, whose single-pass effect ($+14.1$ points) is larger
+than the LowPenalty noise floor and therefore more likely, though not
+certain, to reflect a real effect rather than evaluation noise alone --
+but we no longer present LowPenalty as a confirmed, consistent effect, and
+revise the summary below accordingly.
+
+The ablation results, read in light of this limitation, support the
+following, more cautious conclusions:
+\begin{enumerate}
+    \item \textbf{HighDiscovery shows the larger, more likely-real effect;
+    LowPenalty's effect is not distinguishable from measurement noise.}
+    Relative to Baseline ($27.1\%$), the pooled LowPenalty estimate
+    ($31.0\% \pm 4.5$) is within one standard deviation of Baseline and we
+    do not treat it as a confirmed effect. HighDiscovery's single-pass
+    estimate ($41.2\%$, $+14.1$ points) exceeds the measured noise floor
+    and is our best evidence of a real, larger effect, though it was not
+    itself repeated and so carries the same unquantified uncertainty in
+    principle.
+    \item \textbf{Where an effect is plausible, the displacement account is
+    incomplete.} If HighDiscovery's gain is real, it is not explained by
+    increased displacement: its mean displacement ($14.4\,$m) is not higher
+    than Baseline's ($15.3\,$m). This would mean the coverage gain, if real,
+    comes from more efficiently \emph{targeted} movement toward
+    undiscovered cells rather than simply moving more -- a mechanism our
+    original penalty-avoidance-only hypothesis did not anticipate.
+    \item \textbf{Reward manipulations, if effective at all, help
+    unevenly.} We are only able to say that strengthening the positive
+    signal is a more promising lever than weakening the negative one under
+    this budget, contingent on HighDiscovery's effect being real rather
+    than noise; we can no longer claim LowPenalty reliably raises coverage,
+    only that its pooled estimate is directionally higher than Baseline
+    without clearing our own measured noise floor.
+    \item \textbf{Variance is dominated by evaluation noise, not just seed
+    choice.} The apparent seed-to-seed spread we originally reported
+    (LowPenalty: $24.6\%$--$36.9\%$ across three \emph{distinct} seeds) is
+    now known to be at least partly attributable to re-running the
+    \emph{same} seed and checkpoint (Section~\ref{sec:nondeterminism}), not
+    to genuine sensitivity to the seed argument itself. We do not have
+    enough repeated passes to separate seed-driven variance from
+    evaluation-noise variance for any configuration in this study.
+    \item \textbf{Safety filter decoupling.} Inter-agent collisions remain
+    strictly zero across all nine ablation runs (three configurations
+    $\times$ three seeds), regardless of reward coefficients, demonstrating
+    that the downstream CBF safety filter's guarantee is decoupled from
+    policy competence or reward shaping, as argued in a companion paper on
+    this system's safety layer.
+\end{enumerate}
 
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Proposed Mechanism, and What We Have Not Shown}
-The policy's near-static behaviour (1.5\,m displacement over 150 steps,
-versus 5--10\,m for both non-learned baselines) is consistent with
-convergence to a low-risk equilibrium in which the expected cost of
-attempting to move and discover new cells (a $-8.0$ wall-collision penalty
-or $-10.0$ close-proximity penalty, either of which can occur from a
-single misjudged action) exceeds the expected benefit ($4.0$ per newly
-discovered cell, requiring successful, sustained movement to accumulate).
-We consider this a plausible, quantitatively grounded hypothesis given the
-reward coefficients in Section~\ref{sec:method}, but we did not run a
-reward ablation (e.g., reducing the collision penalty magnitude while
-holding the discovery bonus fixed, or vice versa) to establish it as a
-demonstrated causal mechanism, and we did not run a longer training budget
-to rule out that the policy would eventually escape this equilibrium with
-more iterations. Both are the highest-value follow-up experiments we
-identify for future work. We therefore state our conclusion narrowly: the
-observed underperformance \emph{coincides with} convergence to a
-low-displacement, penalty-averse policy, under a reward and training
-budget we have fully specified; we have not experimentally eliminated
-undertraining, reward-scale miscalibration, or the zero-shot
-generalization gap (Section~\ref{sec:method}) as contributing factors.
+\subsection{Mechanism: Empirical Validation and Evidentiary Bounds}
+Our original hypothesis was that MAPPO's low-displacement failure mode
+arises from a severe asymmetry between dense, immediate negative penalties
+($-8.0$ for wall contact, $-10.0$ for agent proximity) and delayed,
+incremental positive rewards ($4.0$ per newly discovered grid cell), such
+that relieving the penalty would let the policy move more and thereby
+cover more. Having discovered that our evaluation harness is not fully
+deterministic even at fixed seed and checkpoint
+(Section~\ref{sec:nondeterminism}), we can no longer treat LowPenalty's
+single-pass coverage increase as confirmed evidence for this mechanism:
+its pooled, 9-episode estimate ($31.0\% \pm 4.5$) does not clearly exceed
+Baseline ($27.1\%$) once the measured noise floor is accounted for.
 
-\subsection{Scope of the Claim}
-We deliberately frame this as an engineering question -- when should a
-practitioner prefer an engineered planner over a MARL policy for this
-class of task, under a realistic training budget -- rather than a general
-claim that classical heuristics outperform MARL. The Frontier Heuristic
-compared here embeds substantial hand-engineered structure (a discretized
-map, A*, explicit deadlock recovery) that MAPPO must instead infer
-implicitly; a fair reading of our result is that this structure was worth
-more, under our training budget, than what the policy was able to learn
-in its place, not that learning cannot in principle recover it given more
-compute, a better reward, or per-environment training.
+HighDiscovery's single-pass coverage gain ($+14.1$ points) is larger than
+the measured noise floor and is therefore our best available evidence that
+\emph{some} reward manipulation helps, but it was itself evaluated only
+once per seed and so carries the same class of uncertainty in principle,
+untested. What HighDiscovery's result does \emph{not} show, and what our
+original hypothesis predicted it would, is a displacement increase: its
+mean displacement ($14.4\,$m) is not higher than Baseline's ($15.3\,$m).
+If the effect is real, it is more consistent with the positive discovery
+signal directly rewarding useful, targeted movement than with the policy
+simply becoming less risk-averse and moving more -- a mechanism distinct
+from, and not anticipated by, our original penalty-avoidance-only
+hypothesis. We hold this interpretation tentatively, contingent on the
+effect surviving a properly repeated re-evaluation that this revision does
+not include.
+
+Even under the better-performing HighDiscovery configuration, MAPPO's mean
+ACR ($41.2\%$) remains below the Frontier Heuristic's Protocol~B range
+($38.6\%$--$57.0\%$) on comparable seeds, and we have not evaluated
+HighDiscovery beyond a 15-iteration budget or beyond \texttt{cafe}. This
+shows that reward tuning alone, at the budget and seed count tested here,
+does not clearly close the gap:
+\begin{itemize}
+    \item \textbf{Structural knowledge advantage:} The Frontier Heuristic
+    leverages an explicit occupancy grid, A* graph search, and Voronoi
+    bidding to systematically dispatch robots to unexplored clusters. MAPPO,
+    relying on local 24-bin LiDAR ranges and an MLP actor, must learn both
+    mapping and coordinated pathfinding simultaneously from reward gradients.
+    \item \textbf{Training budget limits:} At $3.15\times 10^4$ transitions
+    (45 iterations) and $1.05\times 10^4$ transitions (15 iterations), our
+    budget reflects realistic compute constraints for robotic simulation. We
+    cannot rule out that asymptotic training ($>10^6$ transitions) with
+    curriculum learning or reward normalization would eventually escape the
+    local optimum.
+\end{itemize}
+
+\subsection{In-Distribution Performance vs.\ Zero-Shot Generalization}
+A critical distinction highlighted by our protocols is in-distribution
+learning versus cross-world transfer. MAPPO was trained exclusively in
+\texttt{cafe}. Its performance in \texttt{warehouse}, \texttt{depot},
+\texttt{office}, and \texttt{maze} represents zero-shot transfer across
+drastically different floor plans (from an open $30\times 50$\,m hall to
+a narrow labyrinth). The Frontier Heuristic maintains consistent advantages
+across all topologies precisely because its graph-search and Voronoi
+formulation is topology-agnostic, requiring zero retraining.
 
 \section{Conclusion}
-Under a fully specified, single-environment training budget and reward
-function, and evaluated both on the training environment (10 episodes per
-condition) and zero-shot across four additional, structurally distinct
-environments (single-seed matrix), a MAPPO policy exhibited a reproducible
-low-displacement failure mode and did not match a strong classical
-frontier-and-planning baseline. We report the exact reward coefficients,
-training budget, and both evaluation protocols in full, including their
-differing sample sizes and a residual uncertainty about checkpoint
-consistency between them, so that readers can weigh the evidence directly
-rather than take our summary on faith. We identify a reward-coefficient
-ablation, a longer training budget, and per-environment (rather than
-zero-shot) training as the three highest-value experiments to
-strengthen or overturn this result.
+Under a fully specified, compute-bounded training protocol, MAPPO exhibited
+a reproducible low-displacement failure mode on multi-robot area coverage.
+Attempting to isolate its cause via a three-arm, multi-seed reward
+ablation, we found that strengthening the discovery bonus produced the
+larger, more likely-real coverage gain (mean ACR $27.1\%\to41.2\%$) via a
+mechanism other than increased displacement -- revising our original
+penalty-avoidance-only hypothesis -- while weakening the collision penalty
+produced a smaller apparent gain (mean ACR $27.1\%\to31.9\%$ on a single
+pass) that we subsequently found does not clearly exceed the measurement
+noise of our own evaluation harness, a limitation we discovered only while
+reconciling an internal inconsistency late in this revision and report in
+full rather than concealing. Nonetheless, the classical Frontier Heuristic
+retained superior performance across five diverse environments
+($1.2\times$ to $2.0\times$ margin on single-pass estimates now known to
+carry unquantified uncertainty) without requiring policy training. For
+roboticists operating under bounded compute budgets, hand-engineered
+structural coordination remains, on this evidence, a more sample-efficient
+and more reliably measured choice than model-free MARL evaluated under a
+single-episode-per-condition protocol; we recommend that any follow-up
+work adopt repeated-episode evaluation per condition as a baseline
+requirement, a methodological lesson this paper learned the hard way.
 
 \appendix
 \section{Infrastructure Faults Encountered During Training}

@@ -1,0 +1,15 @@
+{
+  "config": "ablation_highdiscovery",
+  "iterations": 15,
+  "collision_penalty": 8.0,
+  "discovery_bonus": 16.0,
+  "seeds": {
+    "42": {"acr": 43.50, "total_distance_m": 15.67, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
+    "7":  {"acr": 51.63, "total_distance_m": 18.04, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
+    "99": {"acr": 28.46, "total_distance_m": 9.37, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0}
+  },
+  "mean_acr": 41.20,
+  "mean_distance_m": 14.36,
+  "mean_collisions": 0.0,
+  "note": "Single evaluation pass per seed only. Given the non-determinism discovered for the LowPenalty config (see ablation_lowpenalty_summary.json), this result carries the same class of unquantified uncertainty and was not independently repeated in this revision."
+}

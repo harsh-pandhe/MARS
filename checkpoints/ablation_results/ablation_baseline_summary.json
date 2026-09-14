@@ -1,0 +1,14 @@
+{
+  "config": "ablation_baseline",
+  "iterations": 15,
+  "collision_penalty": 8.0,
+  "discovery_bonus": 4.0,
+  "seeds": {
+    "42": {"acr": 25.74, "total_distance_m": 14.63, "total_collisions": 0},
+    "7":  {"acr": 25.19, "total_distance_m": 15.17, "total_collisions": 0},
+    "99": {"acr": 30.43, "total_distance_m": 16.22, "total_collisions": 0}
+  },
+  "mean_acr": 27.12,
+  "mean_distance_m": 15.34,
+  "mean_collisions": 0.0
+}

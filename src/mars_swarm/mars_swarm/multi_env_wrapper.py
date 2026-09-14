@@ -179,6 +179,12 @@ class PettingZooSwarmEnv(ParallelEnv):
         self.cbf_solver = FastCBFSolver(l=0.12, d_safe_obs=0.20, d_safe_agent=0.45, gamma=2.0, P_slack=1000.0)
         self.localizer = ScanMatchingLocalizer(search_dist=0.06, search_yaw=0.04, alpha=0.35)
 
+        # Reward coefficients, overridable via env vars for ablation studies
+        # (see benchmark_reward_ablation.py). Defaults match the values used
+        # for the main 45-iteration MAPPO run reported in the paper.
+        self.reward_collision_penalty = float(os.environ.get("MARS_REWARD_COLLISION_PENALTY", 8.0))
+        self.reward_discovery_bonus = float(os.environ.get("MARS_REWARD_DISCOVERY_BONUS", 4.0))
+
 
         # 24 (lidar) + 2 (goal rel) + 2 (vel) + 18 (9 neighbors * 2) = 46
         self.observation_spaces = {
@@ -806,7 +812,7 @@ class PettingZooSwarmEnv(ParallelEnv):
         # Weight raised 2.0->4.0: coverage-rate is the actual benchmarked metric,
         # but was a small term next to the +-20 goal/collision spikes, giving MAPPO
         # little gradient signal toward the behavior we evaluate it on.
-        coverage_reward = float(new_cells_visited) * 4.0
+        coverage_reward = float(new_cells_visited) * self.reward_discovery_bonus
         
         self.publish_coverage_map()
         
@@ -859,7 +865,7 @@ class PettingZooSwarmEnv(ParallelEnv):
                 # whole advantage estimate for a short (~90-150 step) episode,
                 # dominating over the coverage/progress signal MAPPO needs to learn
                 # from. Still a clear negative signal, just not overwhelming.
-                reward -= 8.0
+                reward -= self.reward_collision_penalty
                 
             # Inter-agent proximity penalties
             x, y, _ = state_dict[agent]

@@ -1,0 +1,31 @@
+{
+  "config": "ablation_lowpenalty",
+  "iterations": 15,
+  "collision_penalty": 2.0,
+  "discovery_bonus": 4.0,
+  "_warning": "This checkpoint/seed combination was evaluated THREE independent times while reconciling a numerical discrepancy during paper revision, and produced three different results each time. See non_determinism_passes below and Section 4.4 / footnote-dagger of topic4_heuristic_beats_marl.tex. Do not treat any single pass as the ground truth.",
+  "pass_1_original": {
+    "42": {"acr": 24.58, "total_distance_m": 13.68, "total_collisions": 0},
+    "7":  {"acr": 34.29, "total_distance_m": 14.70, "total_collisions": 0},
+    "99": {"acr": 36.92, "total_distance_m": 18.93, "total_collisions": 0}
+  },
+  "pass_2_persisted": {
+    "42": {"acr": 37.84, "total_distance_m": 16.01, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
+    "7":  {"acr": 30.11, "total_distance_m": 17.14, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
+    "99": {"acr": 30.20, "total_distance_m": 14.99, "total_collisions": 7, "wall_collisions": 7, "agent_collisions": 0}
+  },
+  "pass_3_reverify": {
+    "42": {"acr": 26.69, "total_distance_m": 13.57, "total_collisions": 0},
+    "7":  {"acr": 29.90, "total_distance_m": 12.54, "total_collisions": 0},
+    "99": {"acr": 28.08, "total_distance_m": 13.72, "total_collisions": 0}
+  },
+  "pooled_9_episodes": {
+    "mean_acr": 30.96,
+    "stdev_acr": 4.52,
+    "min_acr": 24.58,
+    "max_acr": 37.84,
+    "mean_distance_m": 15.03
+  },
+  "root_cause_hypothesis": "Real-time physics/ROS message timing jitter in the Gazebo-based evaluation harness, not the --seed argument (which controls Gazebo's PRNG but not wall-clock-dependent message scheduling). Consistent with repeated 'Moved backwards in time, re-publishing joint transforms' warnings observed across these runs.",
+  "implication": "Every single-episode-per-seed number reported elsewhere in this project (including the Protocol B five-world matrix and the Baseline/HighDiscovery ablation arms, each evaluated only once per seed) carries this same undisclosed uncertainty. Recommended follow-up: 5-10 repeated passes per configuration before treating any effect size as established."
+}

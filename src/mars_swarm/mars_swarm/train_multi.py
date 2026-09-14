@@ -597,16 +597,17 @@ def main():
     parser.add_argument('--episodes', type=int, default=5, help="Number of evaluation episodes")
     parser.add_argument('--iterations', type=int, default=45, help="Number of training iterations")
     parser.add_argument('--restore', type=str, default="", help="Path to checkpoint directory to resume training from")
+    parser.add_argument('--checkpoint-dir', type=str, default="./checkpoints", help="Directory to save training checkpoints to (default: ./checkpoints)")
     parser.add_argument('--gui', action='store_true', help="Run Gazebo with GUI enabled (not headless)")
     args = parser.parse_args()
-    
+
     if args.evaluate:
         if not args.checkpoint:
             print("[ERROR] Please specify a checkpoint path using --checkpoint <path>")
             sys.exit(1)
         run_evaluation(checkpoint_path=args.checkpoint, episodes=args.episodes, headless=not args.gui)
     elif args.train:
-        run_training(iterations=args.iterations, headless=not args.gui, restore=args.restore)
+        run_training(iterations=args.iterations, checkpoint_dir=args.checkpoint_dir, headless=not args.gui, restore=args.restore)
     else:
         # Run demo mode
         start_gazebo(headless=not args.gui)
