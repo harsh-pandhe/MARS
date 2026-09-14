@@ -132,12 +132,34 @@ intervals, CBF-filtered identically to the other two controllers.
 
 \noindent\textbf{MAPPO}: a centralized-critic, shared-policy PPO
 \cite{schulman2017ppo} implementation via Ray RLlib \cite{rllib}. Each
-robot observes a 46-dimensional vector: 24 LiDAR range bins, its own pose
-and velocity, and its assigned goal's relative position; the policy is a
-2-layer MLP (256 units, ReLU) shared across agents, with a separate
-centralized critic that additionally observes all agents' states. The
-action space is continuous, $a_i=[v_i,\omega_i]$ (linear and angular
-velocity), passed through the shared CBF filter described above. Training
+robot observes a 46-dimensional vector, decomposed exactly as
+$o_i = [\ell_{1:24},\, d_{\text{goal}},\, \theta_{\text{goal}},\, v,\,
+\omega,\, n_{1:9,1:2}] \in \mathbb{R}^{46}$: 24 LiDAR range bins
+($\ell$), relative distance and bearing to the robot's current goal
+waypoint ($d_{\text{goal}}, \theta_{\text{goal}}$), linear and angular
+velocity ($v, \omega$), and 9 neighbor slots $\times$ 2 features each
+($n$, padded with a sentinel value of $10.0$ range at $0.0$ bearing when
+fewer than 9 neighbors are present). The goal waypoint itself is drawn
+uniformly at random, on episode start and again each time it is reached,
+from a fixed per-world list of pre-validated safe points
+(\texttt{self.safe\_goals}); this same environment-level mechanism
+supplies the goal signal for \emph{all} controllers uniformly, including
+Random Walk, but it is distinct from -- and considerably less informed
+than -- the Frontier Heuristic's own frontier-cell target selection
+(Section~\ref{sec:method}, above), which reasons over the discretized
+occupancy map rather than a fixed random waypoint list. This is an
+important asymmetry: MAPPO's ``goal'' observation is not the same
+quality of guidance signal the heuristic constructs for itself, and part
+of the heuristic's advantage may be attributable to this richer,
+map-aware target selection rather than to the exploration policy alone.
+The policy is a 2-layer MLP (256 units, ReLU) shared across agents, with a
+separate centralized critic that additionally observes all agents'
+states. The action space is continuous, $a_i=[v_i,\omega_i]$ (linear and
+angular velocity), passed through the shared CBF filter described above,
+identically for every controller; we did not measure how often or by how
+much the CBF filter modifies MAPPO's requested actions relative to the
+other controllers, which we identify as a natural follow-up diagnostic.
+Training
 used PPO clip 0.2, $\gamma=0.99$, GAE $\lambda=0.95$, learning rate
 $10^{-4}$, entropy coefficient 0.01, train batch size 700, minibatch size
 64, 5 SGD epochs per iteration, for 45 iterations (approximately 31{,}500
@@ -268,7 +290,17 @@ in \texttt{cafe}. Under this protocol, median ACR is 38.6\% (heuristic),
 29.6\% (Random Walk), and 14.5\% (MAPPO nominal) -- a heuristic/MAPPO
 ratio of 2.7$\times$, with MAPPO trailing even the unplanned Random Walk
 baseline. Mean per-robot displacement over the 150-step episode is
-5.4\,m (heuristic), 7.4\,m (Random Walk), and 1.5\,m (MAPPO).
+5.4\,m (heuristic), 7.4\,m (Random Walk), and 1.5\,m (MAPPO). This MAPPO
+checkpoint was trained to the full 45-iteration budget described in
+Section~\ref{sec:method}; the substantially higher displacement figures
+reported for the Protocol~C ablation's Baseline configuration ($\approx
+15\,$m total swarm distance, Section~\ref{sec:ablation}) come from a
+\emph{different} checkpoint, trained for only 15 iterations under
+otherwise identical hyperparameters. We do not intend these two numbers
+to be compared directly against each other; the ablation exists to
+isolate the effect of reward coefficients \emph{within} a matched
+15-iteration budget, not to compare against the separately-trained
+45-iteration policy used in Protocol~A.
 
 \begin{figure}[h]
 \centering
@@ -372,13 +404,21 @@ Pass & Seed 42 ACR (\%) & Seed 7 ACR (\%) & Seed 99 ACR (\%) \\
 
 Pooling all 9 episodes gives a mean ACR of $30.96\% \pm 4.52$ (standard
 deviation), i.e.\ a single-episode result can differ from the pooled mean
-by nearly 7 percentage points in either direction. We attribute this to
-real-time physics and ROS message timing jitter in the Gazebo-based
-evaluation harness -- consistent with repeated \texttt{"Moved backwards in
-time, re-publishing joint transforms"} warnings observed in these runs --
-rather than to the fixed \texttt{--seed} argument, which controls
-Gazebo's pseudo-random number generator but not wall-clock-dependent
-message scheduling. \textbf{This means every single-episode-per-seed
+by nearly 7 percentage points in either direction. We verified that all
+evaluation rollouts in this paper, across every protocol, use greedy
+(non-stochastic) action selection at evaluation time
+(RLlib's \texttt{compute\_actions(..., explore=False)}, in
+\texttt{evaluate\_benchmarks.py}, called uniformly by every evaluation
+entry point including the ablation harness); the policy's action output
+is therefore deterministic given an observation, which rules out
+stochastic action sampling as the source of the variance we measured. The
+remaining source is real-time physics and ROS message timing jitter in
+the Gazebo-based evaluation harness -- consistent with repeated
+\texttt{"Moved backwards in time, re-publishing joint transforms"}
+warnings observed in these runs -- rather than the fixed \texttt{--seed}
+argument, which controls Gazebo's pseudo-random number generator but not
+wall-clock-dependent message scheduling or physics-thread race
+conditions. \textbf{This means every single-episode-per-seed
 number reported elsewhere in this paper, including the Protocol~B
 five-world matrix (Table~\ref{tab:5world}) and the Baseline/HighDiscovery
 rows of Table~\ref{tab:ablation}, carries this same undisclosed
@@ -436,12 +476,15 @@ following, more cautious conclusions:
     to genuine sensitivity to the seed argument itself. We do not have
     enough repeated passes to separate seed-driven variance from
     evaluation-noise variance for any configuration in this study.
-    \item \textbf{Safety filter decoupling.} Inter-agent collisions remain
-    strictly zero across all nine ablation runs (three configurations
-    $\times$ three seeds), regardless of reward coefficients, demonstrating
-    that the downstream CBF safety filter's guarantee is decoupled from
-    policy competence or reward shaping, as argued in a companion paper on
-    this system's safety layer.
+    \item \textbf{No inter-agent collisions observed.} Zero inter-agent
+    collisions occurred across all nine ablation runs (three
+    configurations $\times$ three seeds), regardless of reward
+    coefficients. Nine successful trials do not constitute a formal proof
+    of the CBF filter's safety guarantee -- that guarantee follows from
+    the filter's QP formulation, not from empirical trial counts -- but
+    this observation is consistent with the filter's intended behaviour
+    remaining unaffected by policy competence or reward shaping, as argued
+    on formal grounds in a companion paper on this system's safety layer.
 \end{enumerate}
 
 \section{Discussion}
@@ -506,18 +549,23 @@ across all topologies precisely because its graph-search and Voronoi
 formulation is topology-agnostic, requiring zero retraining.
 
 \section{Conclusion}
-Under a fully specified, compute-bounded training protocol, MAPPO exhibited
-a reproducible low-displacement failure mode on multi-robot area coverage.
-Attempting to isolate its cause via a three-arm, multi-seed reward
-ablation, we found that strengthening the discovery bonus produced the
-larger, more likely-real coverage gain (mean ACR $27.1\%\to41.2\%$) via a
+Under a fully specified, compute-bounded training protocol, MAPPO
+consistently exhibited low-displacement behavior on multi-robot area
+coverage across every evaluation episode we ran; we use ``consistently
+observed'' rather than ``reproducible'' deliberately, since we also found
+that this evaluation harness is not numerically reproducible at the level
+of individual episode outcomes (Section~\ref{sec:nondeterminism}), even
+though the qualitative behavior was. Attempting to isolate the failure's
+cause via a three-arm, multi-seed reward ablation, we found that
+strengthening the discovery bonus produced the larger, more
+likely-but-unconfirmed coverage gain (mean ACR $27.1\%\to41.2\%$) via a
 mechanism other than increased displacement -- revising our original
 penalty-avoidance-only hypothesis -- while weakening the collision penalty
-produced a smaller apparent gain (mean ACR $27.1\%\to31.9\%$ on a single
-pass) that we subsequently found does not clearly exceed the measurement
-noise of our own evaluation harness, a limitation we discovered only while
-reconciling an internal inconsistency late in this revision and report in
-full rather than concealing. Nonetheless, the classical Frontier Heuristic
+produced a pooled estimate (mean ACR $27.1\%\to30.96\% \pm 4.52$ over 9
+episodes) that does not clearly exceed the measurement noise of our own
+evaluation harness, a limitation we discovered only while reconciling an
+internal inconsistency late in this revision and report in full rather
+than concealing. Nonetheless, the classical Frontier Heuristic
 retained superior performance across five diverse environments
 ($1.2\times$ to $2.0\times$ margin on single-pass estimates now known to
 carry unquantified uncertainty) without requiring policy training. For
@@ -542,7 +590,34 @@ service; binding Ray explicitly to \texttt{127.0.0.1} and capping its
 object store in-process resolved this and allowed training to resume and
 complete to iteration 45. Neither fault altered the training
 configuration, reward function, or evaluation protocol reported in the
-main text; both are reported for reproducibility.
+main text, and we verified the resumed run's hyperparameters and reward
+coefficients against the pre-crash configuration; we did not, however,
+independently verify that optimizer or RNG internal state was bit-identical
+across the interruption, and note this as a residual, unquantified source
+of uncertainty in the 45-iteration run specifically (it does not affect
+the Protocol~C ablation runs, none of which were interrupted). Both faults
+are reported for reproducibility.
+
+\section{Software Versions}
+\label{sec:versions}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Component & Version \\
+\midrule
+OS & Ubuntu 24.04 \\
+ROS~2 & Jazzy \\
+Gazebo & Harmonic (gz-sim 8) \\
+Python & 3.12.3 \\
+PyTorch & 2.12.0+cu130 \\
+Ray / RLlib & 2.55.1 \\
+Gymnasium & 1.2.2 \\
+PettingZoo & 1.26.1 \\
+OSQP & 1.1.3 \\
+NumPy & 2.5.1 \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \bibliographystyle{plain}
 \bibliography{topic4_references}
