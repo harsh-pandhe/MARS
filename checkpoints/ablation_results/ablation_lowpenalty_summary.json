@@ -26,6 +26,14 @@
     "max_acr": 37.84,
     "mean_distance_m": 15.03
   },
-  "root_cause_hypothesis": "Real-time physics/ROS message timing jitter in the Gazebo-based evaluation harness, not the --seed argument (which controls Gazebo's PRNG but not wall-clock-dependent message scheduling). Consistent with repeated 'Moved backwards in time, re-publishing joint transforms' warnings observed across these runs.",
-  "implication": "Every single-episode-per-seed number reported elsewhere in this project (including the Protocol B five-world matrix and the Baseline/HighDiscovery ablation arms, each evaluated only once per seed) carries this same undisclosed uncertainty. Recommended follow-up: 5-10 repeated passes per configuration before treating any effect size as established."
+  "root_cause_hypothesis": "Real-time physics/ROS message timing jitter in the Gazebo-based evaluation harness, not the --seed argument (which controls Gazebo's PRNG but not wall-clock-dependent message scheduling). Consistent with repeated 'Moved backwards in time, re-publishing joint transforms' warnings observed across these runs. Confirmed NOT policy sampling: all evaluation uses explore=False (greedy actions).",
+  "implication": "Every single-episode-per-seed number reported elsewhere in this project (including the Protocol B five-world matrix, not yet repeated) carries this same undisclosed uncertainty. Baseline and HighDiscovery were subsequently also re-evaluated to n=9 each (see ablation_baseline_summary.json and ablation_highdiscovery_summary.json) to put all three ablation arms on equal statistical footing.",
+  "statistical_test_vs_baseline": {
+    "method": "Welch's t-test (unequal variances)",
+    "baseline_mean": 28.01,
+    "lowpenalty_mean": 30.96,
+    "difference": 2.95,
+    "t_statistic": 1.48,
+    "interpretation": "Not statistically significant at conventional thresholds -- consistent with no real effect once evaluation noise is accounted for, unlike HighDiscovery (t=4.04) vs the same Baseline."
+  }
 }

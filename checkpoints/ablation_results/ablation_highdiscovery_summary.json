@@ -3,13 +3,36 @@
   "iterations": 15,
   "collision_penalty": 8.0,
   "discovery_bonus": 16.0,
-  "seeds": {
-    "42": {"acr": 43.50, "total_distance_m": 15.67, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
-    "7":  {"acr": 51.63, "total_distance_m": 18.04, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0},
-    "99": {"acr": 28.46, "total_distance_m": 9.37, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0}
+  "pass_1_original": {
+    "42": {"acr": 43.50, "total_distance_m": 15.67, "total_collisions": 0},
+    "7":  {"acr": 51.63, "total_distance_m": 18.04, "total_collisions": 0},
+    "99": {"acr": 28.46, "total_distance_m": 9.37, "total_collisions": 0}
   },
-  "mean_acr": 41.20,
-  "mean_distance_m": 14.36,
-  "mean_collisions": 0.0,
-  "note": "Single evaluation pass per seed only. Given the non-determinism discovered for the LowPenalty config (see ablation_lowpenalty_summary.json), this result carries the same class of unquantified uncertainty and was not independently repeated in this revision."
+  "pass_2": {
+    "42": {"acr": 46.78, "total_distance_m": 17.38, "total_collisions": 0},
+    "7":  {"acr": 49.82, "total_distance_m": 17.53, "total_collisions": 0},
+    "99": {"acr": 31.61, "total_distance_m": 14.26, "total_collisions": 0}
+  },
+  "pass_3": {
+    "42": {"acr": 32.69, "total_distance_m": 12.22, "total_collisions": 0},
+    "7":  {"acr": 36.73, "total_distance_m": 15.56, "total_collisions": 0},
+    "99": {"acr": 43.18, "total_distance_m": 17.37, "total_collisions": 0}
+  },
+  "pooled_9_episodes": {
+    "mean_acr": 40.49,
+    "stdev_acr": 8.41,
+    "min_acr": 28.46,
+    "max_acr": 51.63,
+    "mean_distance_m": 15.27,
+    "agent_collisions_total": 0,
+    "wall_collisions_total": 0
+  },
+  "statistical_test_vs_baseline": {
+    "method": "Welch's t-test (unequal variances)",
+    "baseline_mean": 28.01,
+    "highdiscovery_mean": 40.49,
+    "difference": 12.48,
+    "t_statistic": 4.04,
+    "interpretation": "Statistically supported effect, unlike LowPenalty (t=1.48, not significant) vs the same Baseline."
+  }
 }

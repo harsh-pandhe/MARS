@@ -3,12 +3,28 @@
   "iterations": 15,
   "collision_penalty": 8.0,
   "discovery_bonus": 4.0,
-  "seeds": {
+  "pass_1_original": {
     "42": {"acr": 25.74, "total_distance_m": 14.63, "total_collisions": 0},
     "7":  {"acr": 25.19, "total_distance_m": 15.17, "total_collisions": 0},
     "99": {"acr": 30.43, "total_distance_m": 16.22, "total_collisions": 0}
   },
-  "mean_acr": 27.12,
-  "mean_distance_m": 15.34,
-  "mean_collisions": 0.0
+  "pass_2": {
+    "42": {"acr": 28.75, "total_distance_m": 12.04, "total_collisions": 6, "wall_collisions": 6, "agent_collisions": 0},
+    "7":  {"acr": 32.66, "total_distance_m": 13.75, "total_collisions": 19, "wall_collisions": 19, "agent_collisions": 0},
+    "99": {"acr": 35.00, "total_distance_m": 14.75, "total_collisions": 11, "wall_collisions": 11, "agent_collisions": 0}
+  },
+  "pass_3": {
+    "42": {"acr": 25.56, "total_distance_m": 12.66, "total_collisions": 0},
+    "7":  {"acr": 23.99, "total_distance_m": 11.17, "total_collisions": 0},
+    "99": {"acr": 24.76, "total_distance_m": 12.79, "total_collisions": 0}
+  },
+  "pooled_9_episodes": {
+    "mean_acr": 28.01,
+    "stdev_acr": 3.92,
+    "min_acr": 23.99,
+    "max_acr": 35.00,
+    "mean_distance_m": 13.69,
+    "agent_collisions_total": 0,
+    "note": "3 of 9 episodes (all in pass 2) showed nonzero wall contacts (6, 19, 11); the other 6 episodes showed zero. Agent-agent collisions were zero in all 9 episodes."
+  }
 }

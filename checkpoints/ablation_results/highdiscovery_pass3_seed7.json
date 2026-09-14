@@ -1,0 +1,1 @@
+{"scenario_key": "mappo_nominal", "scenario_name": "MAPPO (Nominal)", "world": "cafe", "num_robots": 3, "max_steps": 150, "seed": 7, "steps": 150, "elapsed_sec": 33.9, "acr": 36.73, "total_distance_m": 15.56, "dist_per_robot_m": 5.19, "redundancy": 13.24, "total_collisions": 0, "wall_collisions": 0, "agent_collisions": 0}

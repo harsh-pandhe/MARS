@@ -40,25 +40,26 @@ every environment tested, by margins of 1.2$\times$ to 2.0$\times$
 (achieving 57.0\% vs.\ 28.2\% in the caf\'e).
 \textbf{Diagnosis and Ablation.} To test whether this low-displacement
 behavior stems from a penalty-avoidance equilibrium induced by dense
-negative reward signals, we conduct a three-arm, multi-seed reward
-ablation (Protocol~C, 15 iterations, seeds 42, 7, 99): a Baseline
-configuration (collision penalty $8.0$, discovery bonus $4.0$), a
-LowPenalty configuration (collision penalty reduced to $2.0$), and a
-HighDiscovery configuration (discovery bonus raised to $16.0$). While
-reconciling an internal numerical inconsistency, we discovered that this
-Gazebo-based evaluation harness is not fully deterministic even at a fixed
-seed and a fixed saved checkpoint: three independent evaluation passes of
-the identical LowPenalty configuration produced ACR values ranging from
-$24.6\%$ to $37.8\%$ (pooled mean $31.0\% \pm 4.5$ over 9 episodes). Under
-this pooled estimate, LowPenalty's apparent advantage over Baseline
-($27.1\%$) does not clearly exceed measurement noise. HighDiscovery's
-single-pass result ($41.2\%$, $+14.1$ points over Baseline) exceeds this
-noise floor and is our best evidence that a reward manipulation helps, but
-it was evaluated only once per seed and so carries the same class of
-unquantified uncertainty. Notably, if real, HighDiscovery's gain is
-\emph{not} explained by increased displacement (mean $14.4\,$m vs.\
-Baseline's $15.3\,$m), complicating a purely penalty-avoidance account of
-the original failure mode.
+negative reward signals, we conduct a three-arm reward ablation
+(Protocol~C, 15 iterations): a Baseline configuration (collision penalty
+$8.0$, discovery bonus $4.0$), a LowPenalty configuration (collision
+penalty reduced to $2.0$), and a HighDiscovery configuration (discovery
+bonus raised to $16.0$). While reconciling an internal numerical
+inconsistency, we discovered that this Gazebo-based evaluation harness is
+not fully deterministic even at a fixed seed and a fixed saved checkpoint,
+and subsequently re-evaluated all three arms three independent times each
+across three seeds (42, 7, 99), giving equal statistical footing at
+$n{=}9$ episodes per arm. Under this matched-$n$ analysis, LowPenalty's
+apparent advantage over Baseline ($28.0\%\to31.0\%$) does not clear a
+conventional significance threshold (Welch's $t=1.48$) and is consistent
+with measurement noise. HighDiscovery's advantage ($28.0\%\to40.5\%$,
+$+12.5$ points, Welch's $t=4.04$) does clear that threshold and is, to our
+knowledge, the first statistically-supported positive finding in this
+paper. Notably, HighDiscovery's gain is \emph{not} explained by increased
+displacement (mean $15.3\,$m vs.\ Baseline's $13.7\,$m, well within the
+spread of both), complicating a purely penalty-avoidance account of the
+original failure mode and instead suggesting the reward change improves
+the \emph{efficiency} of movement rather than its quantity.
 \textbf{Contribution.} We report this negative result, its reward
 ablation, and the evaluation non-determinism we discovered while
 attempting to finalize it, in full, including two independent
@@ -293,8 +294,9 @@ baseline. Mean per-robot displacement over the 150-step episode is
 5.4\,m (heuristic), 7.4\,m (Random Walk), and 1.5\,m (MAPPO). This MAPPO
 checkpoint was trained to the full 45-iteration budget described in
 Section~\ref{sec:method}; the substantially higher displacement figures
-reported for the Protocol~C ablation's Baseline configuration ($\approx
-15\,$m total swarm distance, Section~\ref{sec:ablation}) come from a
+reported for the Protocol~C ablation's Baseline configuration
+($13.69\,$m mean total swarm distance across 9 episodes,
+Section~\ref{sec:ablation}) come from a
 \emph{different} checkpoint, trained for only 15 iterations under
 otherwise identical hyperparameters. We do not intend these two numbers
 to be compared directly against each other; the ablation exists to
@@ -330,51 +332,47 @@ To empirically test whether the policy's exploration failure is caused by
 the dense collision penalty term ($-8.0$) overwhelming the discovery bonus
 ($4.0$), we performed a reward ablation study under a controlled 15-iteration
 budget ($\approx 10{,}500$ transitions) with three configurations, each
-trained from scratch under identical hyperparameters and evaluated across
-three independent random seeds (42, 7, 99) on a single 150-step episode
-per seed: \textbf{Baseline} (collision penalty $8.0$, discovery bonus
-$4.0$, i.e.\ the coefficients used everywhere else in this paper),
-\textbf{LowPenalty} (collision penalty reduced to $2.0$, discovery bonus
-held at $4.0$), and \textbf{HighDiscovery} (collision penalty held at
-$8.0$, discovery bonus raised to $16.0$). Table~\ref{tab:ablation}
-summarizes the results; all values are taken directly from per-episode
-evaluation logs with no post-hoc adjustment.
+trained from scratch under identical hyperparameters: \textbf{Baseline}
+(collision penalty $8.0$, discovery bonus $4.0$, i.e.\ the coefficients
+used everywhere else in this paper), \textbf{LowPenalty} (collision
+penalty reduced to $2.0$, discovery bonus held at $4.0$), and
+\textbf{HighDiscovery} (collision penalty held at $8.0$, discovery bonus
+raised to $16.0$). After discovering that a single evaluation pass is not
+representative of a checkpoint's behaviour
+(Section~\ref{sec:nondeterminism}), we evaluated \emph{every} arm three
+independent times across the same three seeds (42, 7, 99), giving 9
+episodes per configuration and 27 episodes in total -- equal statistical
+treatment across all three arms, correcting the single-pass
+Baseline/HighDiscovery numbers reported in an earlier revision of this
+paper. Table~\ref{tab:ablation} summarizes the pooled results; all values
+are taken directly from per-episode evaluation logs with no post-hoc
+adjustment, and are persisted in this project's public results directory
+for independent verification.
 
 \begin{table}[h]
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
-\caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, $N{=}3$, single episode per seed). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
+\caption{Protocol C: reward-coefficient ablation in \texttt{cafe} (15 iterations, 150-step episodes, $N{=}3$, 9 episodes per configuration: 3 seeds $\times$ 3 repeated passes). $c{=}$ collision penalty, $d{=}$ discovery bonus.}
 \label{tab:ablation}
-\begin{tabular}{lcccc}
+\begin{tabular}{lccccc}
 \toprule
-Configuration & Seed & ACR (\%) & Swarm Dist. (m) & Agent Collisions \\
+Configuration & $n$ & ACR Mean $\pm$ SD (\%) & ACR Range (\%) & Dist.\ Mean (m) & Agent Collisions \\
 \midrule
-Baseline ($c{=}8.0, d{=}4.0$) & 42 & 25.74 & 14.63 & 0 \\
-Baseline                      & 7  & 25.19 & 15.17 & 0 \\
-Baseline                      & 99 & 30.43 & 16.22 & 0 \\
-\textbf{Baseline Mean}        & -- & \textbf{27.12} & \textbf{15.34} & \textbf{0.0} \\
-\midrule
-LowPenalty ($c{=}2.0, d{=}4.0$)$^\dagger$ & 42 & 24.58 -- 37.84 & 12.54 -- 18.93 & 0 \\
-LowPenalty$^\dagger$                      & 7  & 29.90 -- 34.29 & 12.54 -- 17.14 & 0 \\
-LowPenalty$^\dagger$                      & 99 & 28.08 -- 36.92 & 13.72 -- 18.93 & 0 \\
-\textbf{LowPenalty Pooled Mean (9 episodes)} & -- & \textbf{30.96 $\pm$ 4.52} & \textbf{15.03} & \textbf{0.0} \\
-\midrule
-HighDiscovery ($c{=}8.0, d{=}16.0$) & 42 & 43.50 & 15.67 & 0 \\
-HighDiscovery                       & 7  & 51.63 & 18.04 & 0 \\
-HighDiscovery                       & 99 & 28.46 & 9.37 & 0 \\
-\textbf{HighDiscovery Mean}$^\ddagger$ & -- & \textbf{41.20} & \textbf{14.36} & \textbf{0.0} \\
+Baseline ($c{=}8.0, d{=}4.0$)       & 9 & $28.01 \pm 3.92$ & $23.99$--$35.00$ & $13.69$ & 0 \\
+LowPenalty ($c{=}2.0, d{=}4.0$)     & 9 & $30.96 \pm 4.52$ & $24.58$--$37.84$ & $15.03$ & 0 \\
+HighDiscovery ($c{=}8.0, d{=}16.0$) & 9 & $40.49 \pm 8.41$ & $28.46$--$51.63$ & $15.27$ & 0 \\
 \bottomrule
 \end{tabular}
 \vspace{2pt}
-{\small $^\dagger$LowPenalty/seed 42, 7, and 99 were each evaluated three
-independent times against the identical saved checkpoint and the identical
-seed argument, discovered in the course of reconciling a numerical
-discrepancy while preparing this revision; ranges show the min--max across
-those three passes (see Section~\ref{sec:nondeterminism}). $^\ddagger$
-Baseline and HighDiscovery were each evaluated once per seed and are not
-known to be free of the same variability; treat their point estimates with
-the same caveat.}
+{\small Full per-episode values (all 27 rows) are given in
+Table~\ref{tab:nondeterminism} for LowPenalty and in this project's
+\texttt{checkpoints/ablation\_results/} directory for all three arms.
+Wall-contact (non-agent) collisions were nonzero in 3 of the 9 Baseline
+episodes (6, 19, and 11 contacts respectively, all in the second
+evaluation pass, zero in the first and third), which we note as a further
+instance of run-to-run variance affecting a metric beyond ACR; agent-agent
+collisions remained zero in all 27 episodes across all three arms.}
 \end{table}
 
 \subsubsection{A Late-Discovered Limitation: Evaluation Non-Determinism}
@@ -419,69 +417,72 @@ warnings observed in these runs -- rather than the fixed \texttt{--seed}
 argument, which controls Gazebo's pseudo-random number generator but not
 wall-clock-dependent message scheduling or physics-thread race
 conditions. \textbf{This means every single-episode-per-seed
-number reported elsewhere in this paper, including the Protocol~B
-five-world matrix (Table~\ref{tab:5world}) and the Baseline/HighDiscovery
-rows of Table~\ref{tab:ablation}, carries this same undisclosed
-uncertainty, which we did not identify until late in this revision.} We
-did not have the resources remaining in this revision to re-run every
-reported configuration multiple times; we disclose the issue explicitly
-rather than silently retain single-episode point estimates as if they were
-exact, and we treat this as the most important limitation of this paper's
-quantitative claims. A rigorous follow-up should evaluate every
-configuration across at least 5--10 repeated passes per seed (not just
-distinct seeds) before treating any effect size in this ablation, or in
-Table~\ref{tab:5world}'s per-world margins, as established.
+number reported elsewhere in this paper, particularly the Protocol~B
+five-world matrix (Table~\ref{tab:5world}), carries this same undisclosed
+uncertainty.} In response, we re-evaluated the Baseline and HighDiscovery
+arms of the ablation three times each as well (matching LowPenalty's
+treatment), giving equal, 9-episode statistical footing across all three
+arms (Table~\ref{tab:ablation}); we did not have the resources in this
+revision to similarly repeat the five-world Protocol~B matrix, and that
+table's margins should still be read as indicative rather than
+statistically established.
 
-Under this pooled, more honest LowPenalty estimate ($30.96\%$), its
-apparent advantage over Baseline ($27.12\%$) shrinks to $+3.8$ points and
-is no longer clearly distinguishable from the within-checkpoint noise
-floor we just measured ($\pm 4.52$ points). We do not withdraw the
-HighDiscovery result, whose single-pass effect ($+14.1$ points) is larger
-than the LowPenalty noise floor and therefore more likely, though not
-certain, to reflect a real effect rather than evaluation noise alone --
-but we no longer present LowPenalty as a confirmed, consistent effect, and
-revise the summary below accordingly.
+With all three ablation arms now evaluated at equal $n=9$, we computed
+Welch's $t$-test (unequal variances) for each arm against Baseline.
+HighDiscovery's mean ($40.49\%$) exceeds Baseline's ($28.01\%$) by $+12.48$
+points, $t=4.04$ -- a difference roughly four times its own standard
+error, and unlikely to be an artifact of the measurement noise we
+characterized above. LowPenalty's mean ($30.96\%$) exceeds Baseline's by
+only $+2.95$ points, $t=1.48$, which does not clear a conventional
+significance threshold and is consistent with no real effect once
+evaluation noise is accounted for. We therefore now have direct
+statistical, not just qualitative, support for treating HighDiscovery as a
+real effect and LowPenalty as statistically indistinguishable from noise
+at this sample size.
 
-The ablation results, read in light of this limitation, support the
-following, more cautious conclusions:
+The ablation results, now evaluated at matched statistical power across
+all three arms, support the following conclusions:
 \begin{enumerate}
-    \item \textbf{HighDiscovery shows the larger, more likely-real effect;
-    LowPenalty's effect is not distinguishable from measurement noise.}
-    Relative to Baseline ($27.1\%$), the pooled LowPenalty estimate
-    ($31.0\% \pm 4.5$) is within one standard deviation of Baseline and we
-    do not treat it as a confirmed effect. HighDiscovery's single-pass
-    estimate ($41.2\%$, $+14.1$ points) exceeds the measured noise floor
-    and is our best evidence of a real, larger effect, though it was not
-    itself repeated and so carries the same unquantified uncertainty in
-    principle.
-    \item \textbf{Where an effect is plausible, the displacement account is
-    incomplete.} If HighDiscovery's gain is real, it is not explained by
-    increased displacement: its mean displacement ($14.4\,$m) is not higher
-    than Baseline's ($15.3\,$m). This would mean the coverage gain, if real,
-    comes from more efficiently \emph{targeted} movement toward
-    undiscovered cells rather than simply moving more -- a mechanism our
-    original penalty-avoidance-only hypothesis did not anticipate.
-    \item \textbf{Reward manipulations, if effective at all, help
-    unevenly.} We are only able to say that strengthening the positive
-    signal is a more promising lever than weakening the negative one under
-    this budget, contingent on HighDiscovery's effect being real rather
-    than noise; we can no longer claim LowPenalty reliably raises coverage,
-    only that its pooled estimate is directionally higher than Baseline
-    without clearing our own measured noise floor.
-    \item \textbf{Variance is dominated by evaluation noise, not just seed
-    choice.} The apparent seed-to-seed spread we originally reported
-    (LowPenalty: $24.6\%$--$36.9\%$ across three \emph{distinct} seeds) is
-    now known to be at least partly attributable to re-running the
-    \emph{same} seed and checkpoint (Section~\ref{sec:nondeterminism}), not
-    to genuine sensitivity to the seed argument itself. We do not have
-    enough repeated passes to separate seed-driven variance from
-    evaluation-noise variance for any configuration in this study.
+    \item \textbf{HighDiscovery's effect is statistically supported;
+    LowPenalty's is not.} At $n{=}9$ per arm, HighDiscovery exceeds
+    Baseline by $+12.48$ points (Welch's $t=4.04$), while LowPenalty
+    exceeds Baseline by only $+2.95$ points ($t=1.48$, not significant at
+    conventional thresholds). Strengthening the positive reward signal is
+    the manipulation we have actual statistical grounds to trust; weakening
+    the negative one, under this budget and these coefficient choices, is
+    not distinguishable from noise.
+    \item \textbf{The displacement account is incomplete.} HighDiscovery's
+    coverage gain is \emph{not} explained by increased displacement: its
+    mean displacement ($15.27\,$m) is not meaningfully higher than
+    Baseline's ($13.69\,$m) relative to the spread in both. This indicates
+    the coverage gain comes from more efficiently \emph{targeted} movement
+    toward undiscovered cells rather than simply moving more -- a
+    mechanism our original penalty-avoidance-only hypothesis did not
+    anticipate, and one that reward shaping may be altering trajectory
+    efficiency rather than raw locomotion magnitude.
+    \item \textbf{Evaluation noise, not seed choice, dominates the
+    variance we originally reported.} The seed-to-seed spread we
+    originally reported for LowPenalty (24.6\%--36.9\% across three
+    \emph{distinct} seeds, single pass each) is now known to be
+    substantially driven by re-running the \emph{same} seed and checkpoint
+    (Section~\ref{sec:nondeterminism}), not by genuine sensitivity to the
+    seed argument. With 9 episodes per arm we can report a standard
+    deviation, but we still cannot cleanly separate seed-driven variance
+    from evaluation-noise variance within that figure.
+    \item \textbf{Collision variance is not confined to ACR.} Baseline
+    showed 0 wall contacts in 6 of 9 episodes but 6, 19, and 11 contacts
+    in the remaining 3 (all from the same repeated-evaluation pass),
+    indicating the non-determinism we discovered affects collision counts,
+    not only coverage. Agent-agent collisions, however, remained at zero
+    across all 27 ablation episodes regardless of reward coefficients or
+    evaluation pass.
     \item \textbf{No inter-agent collisions observed.} Zero inter-agent
-    collisions occurred across all nine ablation runs (three
-    configurations $\times$ three seeds), regardless of reward
-    coefficients. Nine successful trials do not constitute a formal proof
-    of the CBF filter's safety guarantee -- that guarantee follows from
-    the filter's QP formulation, not from empirical trial counts -- but
+    collisions occurred across all 27 ablation episodes (three
+    configurations $\times$ 9 episodes each), regardless of reward
+    coefficients. Twenty-seven successful trials do not constitute a
+    formal proof of the CBF filter's safety guarantee -- that guarantee
+    follows from the filter's QP formulation, not from empirical trial
+    counts -- but
     this observation is consistent with the filter's intended behaviour
     remaining unaffected by policy competence or reward shaping, as argued
     on formal grounds in a companion paper on this system's safety layer.
@@ -498,28 +499,26 @@ incremental positive rewards ($4.0$ per newly discovered grid cell), such
 that relieving the penalty would let the policy move more and thereby
 cover more. Having discovered that our evaluation harness is not fully
 deterministic even at fixed seed and checkpoint
-(Section~\ref{sec:nondeterminism}), we can no longer treat LowPenalty's
-single-pass coverage increase as confirmed evidence for this mechanism:
-its pooled, 9-episode estimate ($31.0\% \pm 4.5$) does not clearly exceed
-Baseline ($27.1\%$) once the measured noise floor is accounted for.
+(Section~\ref{sec:nondeterminism}), we re-evaluated all three ablation
+arms at matched $n{=}9$ and can now report that LowPenalty's coverage
+increase ($28.0\%\to31.0\%$) does not clear a conventional significance
+threshold against Baseline (Welch's $t=1.48$) and should not be treated as
+confirmed evidence for the original hypothesis.
 
-HighDiscovery's single-pass coverage gain ($+14.1$ points) is larger than
-the measured noise floor and is therefore our best available evidence that
-\emph{some} reward manipulation helps, but it was itself evaluated only
-once per seed and so carries the same class of uncertainty in principle,
-untested. What HighDiscovery's result does \emph{not} show, and what our
-original hypothesis predicted it would, is a displacement increase: its
-mean displacement ($14.4\,$m) is not higher than Baseline's ($15.3\,$m).
-If the effect is real, it is more consistent with the positive discovery
-signal directly rewarding useful, targeted movement than with the policy
-simply becoming less risk-averse and moving more -- a mechanism distinct
-from, and not anticipated by, our original penalty-avoidance-only
-hypothesis. We hold this interpretation tentatively, contingent on the
-effect surviving a properly repeated re-evaluation that this revision does
-not include.
+HighDiscovery's coverage gain ($28.0\%\to40.5\%$, $+12.5$ points, Welch's
+$t=4.04$) does clear that threshold and is our best evidence, now with
+direct statistical support rather than a single-pass point estimate, that
+\emph{some} reward manipulation helps. What it does \emph{not} show, and
+what our original hypothesis predicted it would, is a displacement
+increase: its mean displacement ($15.3\,$m) is not meaningfully higher
+than Baseline's ($13.7\,$m) relative to the spread in both. The effect is
+therefore more consistent with the positive discovery signal directly
+rewarding useful, targeted movement than with the policy simply becoming
+less risk-averse and moving more in general -- a mechanism distinct from,
+and not anticipated by, our original penalty-avoidance-only hypothesis.
 
 Even under the better-performing HighDiscovery configuration, MAPPO's mean
-ACR ($41.2\%$) remains below the Frontier Heuristic's Protocol~B range
+ACR ($40.5\%$) remains below the Frontier Heuristic's Protocol~B range
 ($38.6\%$--$57.0\%$) on comparable seeds, and we have not evaluated
 HighDiscovery beyond a 15-iteration budget or beyond \texttt{cafe}. This
 shows that reward tuning alone, at the budget and seed count tested here,
@@ -556,16 +555,19 @@ observed'' rather than ``reproducible'' deliberately, since we also found
 that this evaluation harness is not numerically reproducible at the level
 of individual episode outcomes (Section~\ref{sec:nondeterminism}), even
 though the qualitative behavior was. Attempting to isolate the failure's
-cause via a three-arm, multi-seed reward ablation, we found that
-strengthening the discovery bonus produced the larger, more
-likely-but-unconfirmed coverage gain (mean ACR $27.1\%\to41.2\%$) via a
-mechanism other than increased displacement -- revising our original
-penalty-avoidance-only hypothesis -- while weakening the collision penalty
-produced a pooled estimate (mean ACR $27.1\%\to30.96\% \pm 4.52$ over 9
-episodes) that does not clearly exceed the measurement noise of our own
-evaluation harness, a limitation we discovered only while reconciling an
-internal inconsistency late in this revision and report in full rather
-than concealing. Nonetheless, the classical Frontier Heuristic
+cause via a three-arm reward ablation evaluated at matched statistical
+power ($n{=}9$ episodes per arm after discovering and correcting for this
+non-determinism), we found that strengthening the discovery bonus
+produced a statistically supported coverage gain (mean ACR
+$28.0\%\to40.5\%$, Welch's $t=4.04$) via a mechanism other than increased
+displacement -- revising our original penalty-avoidance-only hypothesis --
+while weakening the collision penalty produced a smaller, statistically
+unsupported gain (mean ACR $28.0\%\to31.0\% \pm 4.5$, $t=1.48$) that does
+not clearly exceed the measurement noise of our own evaluation harness, a
+limitation we discovered only while reconciling an internal inconsistency
+during this revision, corrected by re-evaluating every arm rather than
+leaving the discrepancy unresolved, and report in full rather than
+concealing. Nonetheless, the classical Frontier Heuristic
 retained superior performance across five diverse environments
 ($1.2\times$ to $2.0\times$ margin on single-pass estimates now known to
 carry unquantified uncertainty) without requiring policy training. For
