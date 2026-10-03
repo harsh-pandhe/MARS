@@ -9,6 +9,7 @@ import time
 import signal
 import subprocess
 import argparse
+import json
 import numpy as np
 import torch
 if hasattr(torch, "_dynamo"):
@@ -397,7 +398,13 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True, r
     # max_steps shortened 150->90: episode-reset overhead (~2s settle) is fixed
     # regardless of length, so shorter episodes fit more distinct episodes into
     # each iteration's sample budget without extra wall-clock cost.
-    TRAIN_MAX_STEPS = 90
+    # Overridable via MARS_TRAIN_* env vars for controlled comparisons (the
+    # defaults are the values used for every result in the papers).
+    TRAIN_MAX_STEPS = int(os.environ.get("MARS_TRAIN_MAX_STEPS", 90))
+    TRAIN_BATCH_SIZE = int(os.environ.get("MARS_TRAIN_BATCH_SIZE", 700))
+    TRAIN_LAMBDA = float(os.environ.get("MARS_TRAIN_LAMBDA", 0.95))
+    TRAIN_ENTROPY_COEFF = float(os.environ.get("MARS_TRAIN_ENTROPY_COEFF", 0.01))
+    METRICS_JSONL = os.environ.get("MARS_METRICS_JSONL", "")
 
     def env_creator(config_dict):
         return ParallelPettingZooEnv(PettingZooSwarmEnv(max_steps=TRAIN_MAX_STEPS))
@@ -438,14 +445,14 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True, r
         )
         .training(
             model={"custom_model": "cc_model"},
-            train_batch_size=700,
+            train_batch_size=TRAIN_BATCH_SIZE,
             minibatch_size=64,
             num_epochs=5,
             lr=1e-4,
             clip_param=0.2,
             gamma=0.99,
-            lambda_=0.95,
-            entropy_coeff=0.01,
+            lambda_=TRAIN_LAMBDA,
+            entropy_coeff=TRAIN_ENTROPY_COEFF,
         )
         .multi_agent(
             policies={"shared_policy": (None, obs_space, act_space, {})},
@@ -481,6 +488,28 @@ def run_training(iterations=15, checkpoint_dir="./checkpoints", headless=True, r
         loss = policy_stats.get('policy_loss', 0.0)
         
         print(f"Iteration {i:2d}/{iterations} | Mean Swarm Reward: {reward_mean:.2f} | Policy Loss: {loss:.4f}")
+
+        if METRICS_JSONL:
+            env_stats = result.get('env_runners', {})
+            hist = env_stats.get('hist_stats', {}).get('episode_reward', [])
+            rec = {
+                'iteration': i,
+                'episode_reward_mean': float(reward_mean),
+                'episode_reward_min': float(env_stats.get('episode_reward_min', float('nan'))),
+                'episode_reward_max': float(env_stats.get('episode_reward_max', float('nan'))),
+                'episodes_this_iter': int(env_stats.get('episodes_this_iter', env_stats.get('num_episodes', 0))),
+                'episode_returns': [float(x) for x in hist],
+                'entropy': float(policy_stats.get('entropy', float('nan'))),
+                'policy_loss': float(policy_stats.get('policy_loss', float('nan'))),
+                'vf_loss': float(policy_stats.get('vf_loss', float('nan'))),
+                'vf_explained_var': float(policy_stats.get('vf_explained_var', float('nan'))),
+                'kl': float(policy_stats.get('kl', float('nan'))),
+                'num_env_steps_sampled': int(result.get('num_env_steps_sampled_lifetime', result.get('num_env_steps_sampled', 0))),
+                'config': {'max_steps': TRAIN_MAX_STEPS, 'batch_size': TRAIN_BATCH_SIZE,
+                           'lambda': TRAIN_LAMBDA, 'entropy_coeff': TRAIN_ENTROPY_COEFF},
+            }
+            with open(METRICS_JSONL, 'a') as mf:
+                mf.write(json.dumps(rec) + '\n')
         
         # Save checkpoints periodically and on final iteration
         if i % 5 == 0 or i == iterations:
