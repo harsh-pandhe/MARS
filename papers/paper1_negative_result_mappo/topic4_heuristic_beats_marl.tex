@@ -139,7 +139,14 @@ agents ($d_{\text{safe,agent}}=0.45$\,m). The barrier constraints carry a
 penalized slack variable (a soft CBF), so the filter trades constraint
 violation against deviation from the requested command rather than
 enforcing a hard constraint; if the QP is infeasible it suppresses forward
-motion. All controllers share this
+motion. Two fixed-rule overrides are also applied to every controller's
+command \emph{before} the CBF solve: if the minimum LiDAR range over all
+beams (not only the forward cone) is below $0.22$\,m and the commanded
+forward speed is positive, forward speed is replaced by $-0.08$\,m/s; and
+if another robot is within $0.45$\,m and within $72^\circ$ of the heading,
+forward speed is replaced by $-0.05$\,m/s. The CBF therefore receives a
+command that has already been modified by these rules, which can themselves
+reduce a policy's displacement near walls or neighbours. All controllers share this
 identical CBF filter, controlling for the low-level collision-avoidance
 implementation itself; however, we did not measure how often or by how
 much the filter modifies each controller's requested action before
