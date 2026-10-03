@@ -3,7 +3,7 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{hyperref}
+\usepackage[pdftitle={Decoupling Safety Guarantees from Policy Competence in Multi-Robot Control Barrier Function Filters},pdfauthor={Harsh Pandhe},pdfkeywords={control barrier functions, safe reinforcement learning, multi-robot systems, safety filtering, policy evaluation}]{hyperref}
 \usepackage{authblk}
 \usepackage{setspace}
 \onehalfspacing
@@ -14,36 +14,35 @@
 Multi-Robot Control Barrier Function Filters}
 \author[1]{Harsh Pandhe}
 \affil[1]{Independent Research \\ \texttt{harshpandhehome@gmail.com}}
-\date{}
+\date{October 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
 \noindent
-Control barrier function (CBF) safety filters are increasingly used to wrap
-learned policies in multi-robot systems, on the premise that the filter makes
-the resulting system ``safe.'' We argue this premise conflates two distinct
-properties: velocity-level safety (the filter never commands a colliding
-action) and episode-level competence (the policy accomplishes the task). We
-formalize this distinction for a dual-lookahead CBF/ACAS filter applied to a
-differential-drive robot, and provide direct empirical evidence of the gap
-using a real multi-agent reinforcement learning (MARL) system: a
-centralized-training/decentralized-execution (CTDE) MAPPO policy for
-cooperative area coverage, trained under a short iteration budget that left
-it undertrained. Despite the safety filter being active on every control step
-and functioning as designed, the resulting policy still logs a
-higher\hspace{0pt}-\hspace{0pt}than\hspace{0pt}-\hspace{0pt}baseline
-environment-level collision rate ($3.0$ per episode vs.\ $0.8$--$2.4$ for two
-non-learned baselines) and a mean swarm displacement of $0.0\,\si{m}$ --
-i.e., the filter successfully keeps a stationary, incompetent policy from
-driving into obstacles, but cannot manufacture the exploratory behavior the
-policy never learned. We use this as a worked example to propose a simple
-three-class taxonomy for characterizing safety-filtered learned systems
-(competent-and-filtered, incompetent-and-filtered, unfiltered) and argue that
-reported ``collision rate'' figures for CBF-filtered policies should be
-accompanied by a competence metric, since the former alone cannot
-distinguish a genuinely safe capable system from a safe-by-paralysis one.
+Control barrier function (CBF) safety filters are widely used to wrap
+learned policies in multi-robot systems, on the premise that the filter
+makes the resulting system ``safe.'' We argue that this conflates two
+properties: a velocity-level constraint (the filter does not command a
+colliding action) and episode-level competence (the policy accomplishes the
+task). Using a three-robot ROS~2/Gazebo system with a soft CBF filter and
+72 archived evaluation runs, we show empirically that the two come apart.
+Competence varied widely across these runs (area coverage from 1.1\% to
+98.6\%, although runs differ in world and horizon), yet inter-agent contacts were absent in 69 of 72 runs and were
+confined to three swarm-size configurations in the two smallest arenas, so
+the collision count carried no information about competence. Within a
+27-episode ablation in which coverage ranged from 24\% to 52\%, the
+wall-contact count was uncorrelated with coverage (Spearman $\rho=0.04$,
+$p=0.85$), and for one checkpoint it varied between 0 and 19 contacts
+across repeated evaluations. The filter is also soft: in one 3,500-step run
+the minimum inter-robot distance was $0.382\,\si{m}$, below the $0.45\,\si{m}$
+configured margin, with no contact. We propose a three-class taxonomy
+(competent-and-filtered, incompetent-and-filtered, unfiltered) and a
+reporting checklist: a competence metric, the minimum clearance against the
+configured margin, the collision definition relative to the filter's own
+radius, and repeated evaluation. The evidence comes from one system with
+small samples, and we state its limits explicitly.
 \end{abstract}
 
 \noindent\textbf{Keywords:} control barrier functions, safe reinforcement
@@ -53,260 +52,259 @@ learning, multi-robot systems, safety filtering, policy evaluation
 A control barrier function (CBF) renders a designated safe set forward
 invariant by solving, at each control step, a quadratic program (QP) that
 minimally perturbs a nominal control input subject to a barrier
-constraint~\cite{ames2019cbf}. In multi-robot and learning-enabled robotics,
-CBF filters are frequently proposed as a way to certify the safety of an
-otherwise uncertified learned policy: the policy proposes an action, the
-filter either passes it through or overrides it, and the composed system
-inherits a formal collision-avoidance guarantee independent of the policy's
-internal quality~\cite{cheng2019end}. Recent work continues to extend this
-pattern -- enforcing CBF constraints \emph{during} RL training rather than
-only at
-deployment~\cite{cbfrl2025}, combining CBFs with actor-critic architectures
-via learned Koopman
-representations~\cite{koopmancbf2026}, and applying CBF-informed RL to
-connected and automated vehicles~\cite{beyondsafety2026} and mobile robot
-navigation under
+constraint~\cite{ames2019cbf}. In learning-enabled robotics, CBF filters are
+often proposed as a way to make an otherwise uncertified learned policy
+safe: the policy proposes an action, the filter passes it through or
+overrides it, and the composed system is expected to inherit a
+collision-avoidance property independent of the policy's
+quality~\cite{cheng2019end}. Recent work continues this pattern by enforcing
+CBF constraints during RL training rather than only at
+deployment~\cite{cbfrl2025}, by combining CBFs with actor-critic
+architectures through Koopman representations~\cite{koopmancbf2026}, and by
+applying CBF-informed RL to connected and automated
+vehicles~\cite{beyondsafety2026} and to mobile robot navigation under
 risk~\cite{riskaware2026}.
 
-This literature is, almost uniformly, framed around a positive claim: the
-filter makes the system safe. We do not dispute that claim at the level it is
-made -- a correctly implemented CBF filter genuinely does bound the
-velocity-level action space to avoid detected collisions. Our contribution is
-narrower and, we argue, underexamined: we characterize what that guarantee
-does \emph{not} imply, using a real, reproducible multi-agent system in which
-an undertrained policy remained ``safe'' under an active CBF filter while
-being functionally useless. We propose that this distinction -- between
-velocity-level safety and episode-level competence -- deserves explicit
-separation in how CBF-filtered learned systems are evaluated and reported,
-and offer a simple taxonomy for doing so.
+This literature is framed around a positive claim: the filter makes the
+system safe. We do not dispute that a correctly implemented filter bounds
+the commanded velocity near detected obstacles. We examine what that does
+\emph{not} imply, using a multi-robot system for which the underlying data
+are archived and the code is public. Our contribution is narrow. We show
+that (i) a collision count is a poor proxy for competence, because it can
+be identical for policies whose task performance differs by a large factor;
+(ii) a soft CBF filter does not enforce its configured margin as a hard
+constraint, so ``zero collisions'' and ``the margin was respected'' are
+different statements; and (iii) collision counts in a simulator-in-the-loop
+harness can themselves vary between repeated evaluations of the same
+checkpoint. We propose a taxonomy and a reporting checklist in response.
 
 \section{Related Work}
-Ames et al.~\cite{ames2019cbf} establish the theoretical foundation for CBFs
-as a general safety-certification tool via forward invariance of a safe set.
-Cheng et al.~\cite{cheng2019end} combine CBFs with RL by using the filter as
-an online safety layer around a learned policy for safety-critical continuous
-control, similar in spirit to the architecture we analyze; their emphasis,
-as in most follow-on work, is on demonstrating that the filter prevents
-constraint violation, not on characterizing the space of behaviors the
-filtered system can still exhibit when the underlying policy is weak.
-CBF-RL~\cite{cbfrl2025} internalizes CBF constraints into the training
-process itself so that safety need not be enforced online at deployment; this
-is a complementary direction to our analysis, which is specifically about
-systems that \emph{do} retain an online filter, since online filtering
-remains common practice when training-time guarantees are unavailable or
-insufficient. Koopman-based CBF filters for actor-critic
-RL~\cite{koopmancbf2026} and CBF-informed RL for connected and automated
-vehicles~\cite{beyondsafety2026} extend the filtering paradigm to new system
-classes and representations without revisiting the competence question. A
-risk-aware dynamic safety filter for mobile robot
-navigation~\cite{riskaware2026} is closer to our concern in that it
-explicitly reasons about risk rather than binary safety, but does not report
-a competence metric alongside its safety metric. Yu et al.~\cite{yu2022mappo}
-establish MAPPO with a centralized critic as a strong CTDE baseline for
-cooperative multi-agent tasks; we use an architecture in this family as the
-learned policy under test, not as a contribution in itself.
+Ames et al.~\cite{ames2019cbf} establish CBFs as a general safety
+certification tool via forward invariance of a safe set. Cheng et
+al.~\cite{cheng2019end} use a barrier-function filter as an online safety
+layer around a learned policy for safety-critical continuous control, which
+is similar in spirit to the architecture we examine; their emphasis, like
+most follow-on work, is on showing that the filter prevents constraint
+violation rather than on characterizing what the filtered system can still
+do when the policy is weak. CBF-RL~\cite{cbfrl2025} internalizes CBF
+constraints into training so that safety need not be enforced online; this
+is complementary to our setting, in which an online filter is retained.
+Koopman-based CBF filters for actor-critic RL~\cite{koopmancbf2026} and
+CBF-informed RL for connected and automated vehicles~\cite{beyondsafety2026}
+extend the filtering idea to new system classes. A risk-aware dynamic safety
+filter for mobile robot navigation~\cite{riskaware2026} reasons about risk
+rather than binary safety. We did not find, in these works, a competence
+metric reported alongside the safety metric, but we did not conduct a
+systematic review and do not claim that none exists. Henderson et
+al.~\cite{henderson2018deep} document how evaluation protocol and seed count
+affect conclusions in deep RL; our observation that collision counts vary
+between repeated evaluations of one checkpoint is a simulator-level
+instance of the same concern. Yu et al.~\cite{yu2022mappo} establish MAPPO
+with a centralized critic as a strong baseline for cooperative multi-agent
+tasks; we use a policy in this family only as one of the controllers under
+test.
 
 \section{System Under Test}
 \label{sec:system}
-We use a three-robot TurtleBot3 Waffle swarm performing cooperative area
-coverage in a Gazebo Sim environment (ROS~2 Jazzy), with a shared MAPPO
-policy trained via a centralized critic and a permutation-invariant
-neighbor-embedding actor. Full architectural detail is given in a companion
-system paper; here we summarize only what is needed to interpret the safety
-analysis.
+Three TurtleBot3 Waffle robots (differential drive, 24-beam LiDAR) perform
+cooperative area coverage in Gazebo Harmonic under ROS~2 Jazzy, in five
+worlds (\texttt{cafe}, \texttt{warehouse}, \texttt{depot}, \texttt{office},
+\texttt{maze}). Three controllers are evaluated: a Frontier Heuristic
+(frontier selection, A* routing, Voronoi partitioning, behavior-tree
+recovery), a Random Walk, and a MAPPO policy trained on \texttt{cafe}. All
+three issue a nominal command $(v_{\text{nom}},\omega_{\text{nom}})$ to the
+same safety stack. Environment, controllers and training are described in a
+companion paper~\cite{pandhe2026mappo}; we summarize only what is needed
+here.
 
-\textbf{Dual-lookahead CBF/ACAS filter.} Given a nominal command
-$(v_{\text{nom}}, \omega_{\text{nom}})$ from the policy, the filter solves
+\textbf{Pre-filter overrides.} Before the CBF solve, the environment applies
+two fixed rules to every controller's command. If the minimum LiDAR range
+over all beams is below $0.22\,\si{m}$ and the commanded forward speed is
+positive, forward speed is replaced by $-0.08\,\si{m/s}$. If another robot
+is within $0.45\,\si{m}$ and within $72^\circ$ of the heading, forward speed
+is replaced by $-0.05\,\si{m/s}$.
+
+\textbf{Soft CBF filter.} The filter solves, with OSQP,
 \begin{equation}
-\min_{v,\omega}\ (v-v_{\text{nom}})^2 + 0.05(\omega-\omega_{\text{nom}})^2
-\ \text{s.t.}\ \{A_k v + B_k\omega + \gamma h_k \ge 0\}_k,
+\min_{v,\omega,\delta}\ (v-v_{\text{nom}})^2 + 0.05(\omega-\omega_{\text{nom}})^2
++ P\,\delta^2
+\ \text{s.t.}\ A_k v + B_k\omega + \delta \ge -\gamma h_k\ \ \forall k,
 \end{equation}
-over barrier constraints $h_k$ derived from LiDAR returns and neighbor
-positions at two lookahead points ($\pm l$, $l=0.12\,\si{m}$) along the
-robot's heading axis, with safety margin $d_{\text{safe}}=0.20\,\si{m}$ and
-class-$\mathcal{K}$ gain $\gamma=2.0$, considering all LiDAR sectors and
-neighbors within $0.6\,\si{m}$. The QP is solved with SLSQP at every control
-step. On infeasibility, the filter halts forward motion while permitting
-rotation, rather than passing the unfiltered nominal command through. An
-auxiliary Active Collision Avoidance Safeguard (ACAS) commands a slow reverse
-whenever raw minimum LiDAR range drops below $0.22\,\si{m}$ with positive
-commanded forward speed. This filter is applied identically regardless of
-which policy (learned or scripted) produced the nominal command, which is
-what makes it possible to isolate the filter's contribution from the
-policy's.
+with $|v|\le0.22\,\si{m/s}$, $|\omega|\le1.0\,\si{rad/s}$ and
+$0\le\delta\le10$. The barrier terms $h_k$ come from LiDAR returns within
+$0.6\,\si{m}$, evaluated at two lookahead points ($\pm l$, $l=0.12\,\si{m}$)
+on the heading axis with obstacle radius $d_{\text{safe,obs}}=0.20\,\si{m}$,
+and from neighbors within $1.2\,\si{m}$ with agent radius
+$d_{\text{safe,agent}}=0.45\,\si{m}$; $\gamma=2.0$ and $P=1000$. After the
+solve, forward speed is set to $\min(0,v)$ if any return in the forward cone
+(five beams) is below $0.24\,\si{m}$. If the QP is infeasible the filter
+returns $(\min(0,v_{\text{nom}}),\omega_{\text{nom}})$. Because of the slack
+variable $\delta$, the barrier constraints may be violated at a price, so
+\emph{the configured radii are soft}. The agent term uses a relative-distance
+barrier that treats the neighbor's velocity as bounded and unmodeled rather
+than estimating it. We therefore make no formal safety claim for this
+filter; everything below is an empirical observation about its behaviour in
+simulation.
 
-\textbf{Environment-level collision metric.} Following standard practice, we
-report a binary collision event whenever any robot's minimum LiDAR range
-drops below $0.20\,\si{m}$ during an episode -- the same threshold used as
-$d_{\text{safe}}$ in the filter. This is deliberately the metric most
-favorable to a ``the filter makes it safe'' narrative, since it is measured
-at the same distance the filter itself defends.
+\textbf{Collision metrics.} A \emph{wall contact} is counted when the
+minimum LiDAR range is below $0.14\,\si{m}$, the approximate sensor-to-bumper
+distance of the robot. An \emph{agent contact} is counted when two robots
+are closer than $0.20\,\si{m}$ after the first 15 steps of an episode. Note
+that the agent-contact threshold ($0.20\,\si{m}$) is much smaller than the
+filter's agent margin ($0.45\,\si{m}$): the metric does not test whether the
+margin was respected.
 
 \section{Empirical Characterization}
 \label{sec:empirical}
-We benchmark three methods under identical filter conditions in the nominal
-regime (5 episodes each): a Random Walk baseline, a reactive Frontier
-Heuristic baseline (closest-unvisited-cell target selection with reactive
-obstacle avoidance), and the MAPPO policy trained for 15 iterations
-($4{,}500$ total environment steps -- physics-in-the-loop training in Gazebo
-has no fast-simulator shortcut, so this is a genuinely small budget by MARL
-standards). All three methods are subject to the identical CBF/ACAS filter
-described in Section~\ref{sec:system}.
+All numbers below come from files archived in the project repository
+(\texttt{checkpoints/}) and were recomputed from the raw per-run records.
+Each run is a single episode of a single configuration unless stated
+otherwise.
+
+\subsection{Safety audit across swarm size and world}
+Table~\ref{tab:sweep} reports a robot-count sweep with the Frontier
+Heuristic, 200 steps per run, one run per cell.
 
 \begin{table}[h]
 \centering
-\caption{Nominal-regime comparison, mean $\pm$ std over 5 episodes. All
-methods run under the identical CBF/ACAS filter.}
-\label{tab:main}
-\begin{tabular}{@{}lcccc@{}}
+\caption{Frontier Heuristic, 200 steps, one run per cell. Entries are agent contacts / wall contacts.}
+\label{tab:sweep}
+\begin{tabular}{lcccc}
 \toprule
-Method & ACR (\%) $\uparrow$ & Redund.\ $\downarrow$ & Dist.\ (m) & Coll.\ $\downarrow$ \\
+World & $N{=}2$ & $N{=}3$ & $N{=}5$ & $N{=}8$ \\
 \midrule
-Random Walk        & $18.1\pm0.6$ & 52.64 & 6.3 & 0.80 \\
-Frontier Heuristic & $21.1\pm9.9$ & 8.12  & 4.8 & 2.40 \\
-MAPPO (undertrained) & $10.4\pm1.5$ & 14.63 & \textbf{0.0} & \textbf{3.00} \\
+cafe      & 0 / 0 & 0 / 0 & 2 / 42 & 8 / 16 \\
+warehouse & 0 / 0 & 0 / 0 & 0 / 0  & 0 / 4 \\
+depot     & 0 / 0 & 0 / 0 & 0 / 73 & 0 / 31 \\
+office    & 0 / 0 & 0 / 8 & 0 / 14 & 2 / 0 \\
+maze      & 0 / 0 & 0 / 0 & 0 / 0  & 0 / 135 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The result central to this paper's argument is the MAPPO row's
-\emph{mean displacement of $0.0\,\si{m}$} co-occurring with its
-\emph{highest} collision count of the three methods. Evaluated
-deterministically (no exploration noise), the policy collapses to a
-near-stationary behavior at or immediately after spawn -- it does not explore
-the environment at all -- while still logging more environment-level
-collision events than either scripted baseline, which do move. Diagnostic
-data from the training run corroborates the underlying cause: policy entropy
-fell to $-0.53$ by the final iteration (from a positive value earlier in
-training), and stochastic training rollouts had explored substantially more
-of the state space than the deterministic evaluation policy retained --
-consistent with a policy that converged to a locally ``safe'' near-stationary
-behavior before it had seen enough episodes to learn that exploration is
-rewarded.
+Agent contacts occurred in 3 of 20 configurations, all at $N\ge5$ in the two
+smallest arenas (\texttt{cafe}, $17\times8\,\si{m}$, and \texttt{office}),
+consistent with the fixed margins occupying a larger share of free space as
+density rises, though we did not test that explanation. Three longer
+single-controller runs (24{,}000-step \texttt{warehouse}, 3{,}500-step
+\texttt{depot}, 3{,}500-step \texttt{office}) recorded no agent contact.
+Across the 25-run controller matrix and the 27-episode ablation described
+below, no agent contact occurred. In total, 69 of the 72 archived sweep,
+matrix and ablation runs had no agent contact.
 
-Critically, this is not a filter failure. The filter is not designed to,
-and does not claim to, prevent the environment-level collision event that
-triggers when a stationary robot's already-close neighbor or wall geometry
-places it under the $0.20\,\si{m}$ threshold at spawn, nor to invent an
-escape trajectory for a policy that never proposes one. The filter's actual
-guarantee -- bounded velocity given current sensing, with a rotation-only
-fallback on QP infeasibility rather than passing an unfiltered command -- was
-exercised correctly throughout. What the result demonstrates is that this
-guarantee, though real, is insufficient on its own to produce the intuitive
-notion of a ``safe robot'': a robot that is safe because it is frozen in
-place, adjacent to an obstacle it was placed near at spawn, is safe by the
-filter's contract and useless by every other measure.
+\subsection{The margin is soft}
+In the 3{,}500-step \texttt{office} run the minimum inter-robot distance was
+$0.382\,\si{m}$, below the $0.45\,\si{m}$ agent margin, with no agent contact
+(the contact threshold is $0.20\,\si{m}$). The \texttt{depot} run's minimum
+was $0.552\,\si{m}$ and the 24{,}000-step \texttt{warehouse} run's was
+$0.814\,\si{m}$. This is the behaviour expected of a soft constraint; it
+means that a zero-contact record, taken alone, does not show that the
+configured margin was maintained.
 
-\section{A Taxonomy for Reporting Filtered Systems}
-We propose classifying a CBF-filtered learned system along two independent
-axes rather than one: \emph{filter status} (active/inactive, and whether it
-degrades gracefully on infeasibility) and \emph{policy competence}
-(task-level performance under the filter, e.g.\ coverage rate, goal-reach
-rate, or an equivalent domain metric). This yields three practically
-distinguishable classes:
+\subsection{Dynamic hazards}
+Two scenarios were run once each in Gazebo with a scripted moving robot as
+the hazard, with the obstacle radius set to $0.22\,\si{m}$ (the dynamic
+test script's setting, which differs slightly from the $0.20\,\si{m}$ used
+elsewhere). In a head-on approach at a closing speed of $0.38\,\si{m/s}$ the
+filter shed forward speed and reversed, with minimum centre distance
+$0.349\,\si{m}$, minimum LiDAR range $0.211\,\si{m}$ and no contact. In an
+orthogonal crossing at $0.22\,\si{m/s}$ the robot yielded to standstill and
+then resumed, with minimum centre distance $0.437\,\si{m}$ and no contact.
+Solver-level unit tests with synthetic LiDAR returns check that forward
+speed is shed as an approaching return closes (included in the repository's
+CI). Each Gazebo scenario is a single run and the raw traces are not
+archived, so these are illustrations, not statistical evidence.
 
+\subsection{Collision counts do not track competence}
+\label{sec:decouple}
+The 25-run controller matrix (5 worlds $\times$ 5 controller/scenario
+conditions, one episode each, 150 steps) spans coverage from $1.2\%$ to
+$57.0\%$ and contains no agent contact. In \texttt{cafe} the Frontier
+Heuristic (57.0\% coverage), Random Walk (22.6\%) and nominal MAPPO
+(28.2\%) all recorded zero wall and zero agent contacts. The 27-episode
+ablation re-evaluates three MAPPO checkpoints trained under different reward
+coefficients, three seeds with three repeated evaluations each (the
+repeated evaluations of one checkpoint are not independent samples; see the
+companion paper). Coverage ranged from $24.0\%$ to $51.6\%$. Agent contacts
+were zero in all 27 episodes, and the wall-contact count was uncorrelated
+with coverage (Spearman $\rho=0.04$, $p=0.85$, $n=27$; Pearson $r=-0.04$).
+The mean wall-contact count per episode was $4.00$, $0.78$ and $0.00$ for
+the arms with mean coverage of $28.0\%$, $31.0\%$ and $40.5\%$, but the
+arm difference is driven by a few episodes: for the Baseline checkpoint
+the count was 0 in 6 of 9 episodes and 6, 19 and 11 in the other three
+(all from one evaluation pass). Repeated evaluation of an identical
+checkpoint and seed argument therefore changes collision counts as well as
+coverage, which we attribute to real-time simulator timing rather than to
+policy sampling, since evaluation uses greedy actions.
+
+The pattern matters for reporting. A collision count that is identically
+zero across policies of very different competence cannot rank them, and a
+count that varies between 0 and 19 across repeated evaluations of one
+checkpoint is not a stable property of the policy.
+
+\section{A Taxonomy and Reporting Checklist}
+We classify a filtered learned system along two axes: whether a safety
+filter is active, and policy competence under it (a task metric such as
+coverage rate or goal-reach rate).
 \begin{itemize}
-  \item \textbf{Class A -- Competent and filtered.} The policy accomplishes
-        the task and the filter is rarely or never binding. The intuitive
-        ``safe and capable'' system.
-  \item \textbf{Class B -- Incompetent and filtered.} The policy fails to
-        accomplish the task (low task-metric score, as in our
-        $0.0\,\si{m}$-displacement MAPPO run) while the filter prevents
-        velocity-level constraint violation. Safe-by-paralysis or
-        safe-by-restriction: the collision-rate metric alone cannot
-        distinguish this from Class A.
-  \item \textbf{Class C -- Unfiltered.} No safety filter; task competence and
-        safety are entangled, and any observed low collision rate is
-        attributable to the policy alone.
+  \item \textbf{Class A, competent and filtered.} The policy accomplishes the
+        task and the filter rarely binds.
+  \item \textbf{Class B, incompetent and filtered.} The policy performs
+        poorly while the filter prevents constraint violations. A collision
+        metric alone cannot distinguish this from Class A.
+  \item \textbf{Class C, unfiltered.} Safety and competence are entangled and
+        any low collision rate is attributable to the policy.
 \end{itemize}
+In our data, policies spanning a wide coverage range all fall under the same
+zero agent-contact record (Section~\ref{sec:decouple}); on the collision
+metric the weaker and stronger ones are indistinguishable. We therefore
+recommend that papers reporting collision rates for CBF-filtered learned
+policies also report:
+\begin{enumerate}
+  \item a task-competence metric alongside the collision metric;
+  \item the minimum clearance achieved, against the configured margin;
+  \item the collision definition and its threshold relative to the filter's
+        own radius;
+  \item the filter's intervention frequency and magnitude per controller
+        (we did \emph{not} measure this, which is a limitation of our own
+        study); and
+  \item repeated evaluation of each checkpoint, with the unit of
+        statistical independence stated.
+\end{enumerate}
 
-Under this taxonomy, our MAPPO result is a documented, empirically produced
-Class~B instance. We argue that any paper (including a system paper we have
-written using the same underlying platform) reporting a collision-rate
-figure for a CBF-filtered learned policy should also report a task-competence
-figure alongside it, precisely because Table~\ref{tab:main}'s collision
-column, read in isolation, does not distinguish MAPPO's Class~B result from
-a Class~A one -- the two are visually similar (low collision counts) but
-substantively opposite.
+\section{Limitations}
+The evidence comes from one system, three controllers and a simulator whose
+evaluation is not deterministic: three evaluations of an identical
+checkpoint and seed produced different results in the companion study, and
+the single-episode cells in Table~\ref{tab:sweep} and in the controller
+matrix inherit that variance. Sample sizes are small, so we report counts
+and one rank correlation rather than significance tests on the sweep or
+matrix. The dynamic-hazard results are single runs. The filter is soft and
+we offer no formal guarantee. We did not measure how often or by how much
+the filter and the pre-filter overrides modify each controller's commands,
+so we cannot say how much of any controller's behaviour they mediate. We do
+not claim that CBF filters are ineffective: the filter and overrides
+operated as configured throughout, and a velocity-level bound is a useful
+property in its own right.
 
-\section{Discussion and Limitations}
-Our empirical evidence comes from a single system and a single undertrained
-policy; we do not claim the entropy-collapse mechanism that produced this
-specific Class~B instance is the only route to one. We also do not claim CBF
-filters are ineffective -- the filter in Section~\ref{sec:system} performed
-exactly as specified throughout every experiment reported here, including the
-Class~B case, and a policy-agnostic bounded-velocity guarantee is a genuinely
-useful property independent of the concerns raised in this paper. Our claim
-is narrower: that the guarantee and the outcome most readers associate with
-it (a capable, safe robot) are separable, that this separation is easy to
-produce by accident (an undertrained policy, not an adversarial one, was
-sufficient here), and that current reporting conventions in the CBF-filtered
-RL literature do not consistently surface it. A natural extension is a
-systematic sweep across training budgets, reward designs, and filter
-parameters to map the boundary between Class~A and Class~B behavior, rather
-than the single worked example provided here.
+An earlier version of this paper reported a frozen, undertrained MAPPO
+policy with zero displacement and a higher wall-contact count than two
+baselines as its central example. We withdrew it: it came from an earlier
+filter implementation (a SciPy SLSQP solver and different collision
+thresholds), its raw records are not archived, and it cannot be reproduced
+with the current code. The thesis here rests instead on the archived runs
+above.
 
 \section{Conclusion}
-We characterized, with direct empirical evidence from a real multi-robot
-reinforcement learning system, the gap between what a CBF/ACAS safety filter
-guarantees (bounded, collision-avoiding velocity given current sensing) and
-what it is often implicitly credited with (a competent, safe robot). An
-undertrained MAPPO policy remained ``safe'' by the filter's own contract
-while being entirely stationary and, by a strict environment-level metric,
-more collision-prone than two non-learned baselines that actually moved. We
-propose reporting task-competence alongside collision-rate for CBF-filtered
-learned systems, and offer a three-class taxonomy (competent-filtered,
-incompetent-filtered, unfiltered) as a starting point for making this
-distinction explicit in future work.
-
-\section{Postscript: Multi-World, Multi-Scale Safety Validation}
-The single-world, single-policy observation reported above motivated a
-broader validation of the underlying unicycle CBF/QP safety filter itself,
-independent of policy competence. The filter (separate obstacle and
-inter-agent safety radii, $d_{\text{safe,obs}}=0.22\,$m,
-$d_{\text{safe,agent}}=0.45\,$m, solved via OSQP at each control step) was
-evaluated across all five benchmark worlds (\texttt{cafe},
-\texttt{warehouse}, \texttt{depot}, \texttt{office}, \texttt{maze}) under
-the Frontier Heuristic controller, at swarm sizes $N \in \{2,3,5,8\}$, and
-separately under two dynamic (non-static) hazard scenarios.
-
-\begin{table}[h]
-\centering
-\caption{Inter-agent collision count across swarm-size sweep, 200-step episodes, 20 configurations.}
-\label{tab:cbf-scaling}
-\begin{tabular}{lcccc}
-\hline
-World & $N{=}2$ & $N{=}3$ & $N{=}5$ & $N{=}8$ \\
-\hline
-cafe      & 0 & 0 & 2 & 8 \\
-warehouse & 0 & 0 & 0 & 0 \\
-depot     & 0 & 0 & 0 & 0 \\
-office    & 0 & 0 & 0 & 2 \\
-maze      & 0 & 0 & 0 & 0 \\
-\hline
-\end{tabular}
-\end{table}
-
-Inter-agent collisions remained at zero in 18 of 20 swarm-size
-configurations, with isolated contacts appearing only at $N{=}8$ in the two
-smallest arenas (\texttt{cafe}, $17\,{\times}\,8$\,m; \texttt{office}
-corridors), consistent with the filter's safety radius becoming a larger
-fraction of available free space as agent density increases, rather than
-with any breakdown of the filter's guarantee. Under both dynamic-hazard
-tests -- a head-on closing trajectory at $v_{\text{rel}}=0.38\,$m/s and an
-orthogonal crossing at $v_{\text{rel}}=0.22\,$m/s -- the filter produced
-active braking and standstill-yielding behaviour respectively, holding
-minimum clearance above the configured safety radius in both cases with
-zero contacts. Separately, root-cause analysis of a non-zero inter-agent
-collision count observed in the \texttt{depot} world (6 contacts, 3
-consecutive control steps) traced the cause to sensor occlusion: two agents
-rounding opposite faces of the same convex structural pillar lost
-line-of-sight to each other until already inside the safety radius,
-after which the filter's repulsion term separated them within the same
-control cycle. This is a sensing-visibility limitation of a purely
-reactive, single-step-lookahead filter, not a solver or constraint-encoding
-defect, and is a natural target for a longer-horizon or map-aware
-extension of the filter presented here.
+In a three-robot Gazebo system with a soft CBF filter, agent contacts were
+absent in 69 of 72 archived runs while coverage ranged from 1.1\% to
+98.6\% (across worlds and horizons), wall-contact counts were uncorrelated with coverage within an
+ablation, and the configured agent margin was not strictly maintained. A
+collision count therefore cannot stand in for competence, and a zero-contact
+record does not show that a soft margin held. We propose reporting a
+competence metric, minimum clearance, the collision definition and repeated
+evaluations alongside any collision rate, and we note that our own study
+lacks the filter-intervention measurement that we recommend.
 
 \bibliographystyle{plain}
 \bibliography{topic2_references}
