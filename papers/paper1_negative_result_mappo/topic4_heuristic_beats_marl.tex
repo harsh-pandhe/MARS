@@ -197,9 +197,13 @@ of the heuristic's advantage may be attributable to this richer,
 map-aware target selection rather than to the exploration policy alone.
 Table~\ref{tab:controller-assumptions} summarizes these structural
 and informational differences across all three evaluated controllers.
-The policy is a 2-layer MLP (256 units, ReLU) shared across agents, with a
-separate centralized critic that additionally observes all agents'
-states. The action space is continuous, $a_i=[v_i,\omega_i]$ (linear and
+The policy is shared across agents. Each neighbor's (distance, bearing) pair
+is embedded by a two-layer ReLU network ($2\to16\to16$), masked and
+mean-pooled over the up-to-nine neighbor slots, concatenated with the 28
+ego features, and passed through a two-layer Tanh actor ($44\to64\to64$)
+to the action distribution. A separate centralized critic ($76\to64\to64\to1$,
+Tanh) takes the same 44 features plus a mean-pooled embedding
+($48\to32\to32$, ReLU) of the other agents' observation--action pairs. The action space is continuous, $a_i=[v_i,\omega_i]$ (linear and
 angular velocity), passed through the shared CBF filter described above,
 identically for every controller; we did not measure how often or by how
 much the CBF filter modifies MAPPO's requested actions relative to the
