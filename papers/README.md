@@ -4,13 +4,13 @@ Five papers derived from the MARS multi-robot swarm coverage project, each self-
 
 | # | Folder | Title | Format | Core Finding |
 |---|--------|-------|--------|--------------|
-| 1 | [`paper1_negative_result_mappo/`](paper1_negative_result_mappo/) | Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage | SSRN-style | MAPPO loses to Frontier Heuristic in all 5 tested worlds — the headline negative result, with explicit two-protocol evaluation, ACR definition, reward equation, and references (revised after external review) |
+| 1 | [`paper1_negative_result_mappo/`](paper1_negative_result_mappo/) | Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage | SSRN-style | MAPPO loses to Frontier Heuristic in all 5 tested worlds — the headline negative result, with explicit two-protocol evaluation, ACR definition, reward equation, and references (revised after external review). **Submitted to SSRN 2026-10-03, abstract ID [7556699](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699) (under SSRN review).** |
 | 2 | [`paper2_sample_efficient_mappo/`](paper2_sample_efficient_mappo/) | Sample-Efficient MAPPO for Physics-in-the-Loop Multi-Robot Training | SSRN-style | Diagnoses & fixes training instability; postscript reports the completed (still negative) validation |
 | 3 | [`paper3_cbf_safety_bounds/`](paper3_cbf_safety_bounds/) | Decoupling Safety Guarantees from Policy Competence | SSRN-style | CBF filter safety holds (0 collisions) even when the policy behind it is incompetent |
 | 4 | [`paper4_generalization_scaling/`](paper4_generalization_scaling/) | Environment Structure, Not Just Team Size | SSRN-style | Coverage ceiling is a topology property, not a policy property — 5-world, 4-swarm-size sweep |
 | 5 | [`paper5_safe_scalable_architecture/`](paper5_safe_scalable_architecture/) | MARS: Safe and Scalable Multi-Agent Reinforcement Learning | IEEEtran (conference) | Full system architecture paper — safety/coordination validated, MAPPO component honestly negative |
 
-All PDFs compile cleanly with `pdflatex` (0 errors) as of the last build. Source `.bib` files and `figures/` (where applicable) are included per-paper so each folder can be zipped and submitted independently to SSRN, arXiv, or a conference.
+All PDFs compile cleanly with `pdflatex` (0 errors) as of the last build. Only Paper 1 has been through the full review-and-correction cycle; Papers 2–5 predate the evaluation non-determinism finding and the n=3 statistical correction and must be audited before any submission. Source `.bib` files and `figures/` (where applicable) are included per-paper so each folder can be zipped and submitted independently to SSRN, arXiv, or a conference.
 
 ## Data sources behind these papers
 

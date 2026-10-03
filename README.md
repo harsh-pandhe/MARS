@@ -259,7 +259,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/
 This project's results are written up as 5 self-contained research papers and 10 LinkedIn posts:
 
 - [**`papers/`**](papers/) — 5 papers (source + compiled PDF + figures), SSRN/arXiv/conference-ready. See [`papers/README.md`](papers/README.md) for the index and headline findings per paper.
-- [**`papers/paper1_negative_result_mappo/`**](papers/paper1_negative_result_mappo/) — Primary preprint: *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"* ([PDF](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)).
+- [**`papers/paper1_negative_result_mappo/`**](papers/paper1_negative_result_mappo/) — Primary preprint: *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"* ([PDF](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)). Submitted to SSRN on 2026-10-03 (abstract ID [7556699](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699), under review).
 - [**`posts/`**](posts/) — 10 LinkedIn posts with copy and figures. See [`posts/README.md`](posts/README.md).
 
 ---

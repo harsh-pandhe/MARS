@@ -134,8 +134,12 @@ coordinated via a PettingZoo-compatible parallel multi-agent environment
 controller produced it, passes through an identical unicycle Control
 Barrier Function (CBF) filter \cite{ames2019cbf}, solved as a quadratic
 program via OSQP \cite{stellato2020osqp} at each control step, with separate safety
-radii for static obstacles ($d_{\text{safe,obs}}=0.22$\,m) and neighboring
-agents ($d_{\text{safe,agent}}=0.45$\,m). All controllers share this
+radii for static obstacles ($d_{\text{safe,obs}}=0.20$\,m) and neighboring
+agents ($d_{\text{safe,agent}}=0.45$\,m). The barrier constraints carry a
+penalized slack variable (a soft CBF), so the filter trades constraint
+violation against deviation from the requested command rather than
+enforcing a hard constraint; if the QP is infeasible it suppresses forward
+motion. All controllers share this
 identical CBF filter, controlling for the low-level collision-avoidance
 implementation itself; however, we did not measure how often or by how
 much the filter modifies each controller's requested action before
