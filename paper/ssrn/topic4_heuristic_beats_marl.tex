@@ -5,12 +5,12 @@
 \usepackage{amssymb}
 \usepackage{dsfont}
 \usepackage[margin=1in]{geometry}
-\usepackage{hyperref}
+\usepackage[pdftitle={Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage},pdfauthor={Harsh Pandhe},pdfkeywords={multi-agent reinforcement learning, MAPPO, multi-robot coverage, negative results, reproducibility, control barrier functions}]{hyperref}
 
 \title{Diagnosing a Low-Displacement Failure Mode in MAPPO\\
 for Multi-Robot Area Coverage}
 \author{Harsh Pandhe}
-\date{\today}
+\date{October 3, 2026}
 
 \begin{document}
 \maketitle
@@ -379,7 +379,7 @@ isolate the effect of reward coefficients \emph{within} a matched
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.95\textwidth]{../../checkpoints/benchmark_results.png}
-\caption{Protocol A: area coverage rate and cell-visit overlap redundancy, 10 episodes per condition, caf\'e environment. MAPPO's tight, low-value boxes indicate consistent underperformance across episodes, not high-variance noise.}
+\caption{Protocol A: area coverage rate and cell-visit overlap redundancy, 10 episodes per condition, caf\'e environment. MAPPO's low ACR distribution indicates consistently low coverage within these sampled episodes; the repeatability experiments in Section~\ref{sec:nondeterminism} nevertheless show that individual episode outcomes in this harness are not fully deterministic.}
 \label{fig:boxplot}
 \end{figure}
 
