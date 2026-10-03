@@ -115,7 +115,7 @@ since Gazebo must run in the main process, so all rollouts are serial.
 Learning rate $10^{-4}$, PPO clip $0.2$, $\gamma=0.99$, $5$ epochs and
 minibatch size $64$ are common to all runs. Runs used code commit \texttt{1a83e72}, an AMD Ryzen~5 7600 (6 cores, 12 threads), about 30~GB RAM and Ubuntu 24.04.5 LTS. Wall-clock time was about $1{,}010$~s per original-arm run and $2{,}508$~s per corrected-arm run.
 
-\textbf{Entropy metric and ``collapse.} The policy has two continuous action dimensions $(v,\omega)$. To our understanding RLlib's default for a box action space is a diagonal Gaussian, for which the logged entropy is the \emph{differential} entropy, summed over action dimensions and averaged over the training batch; differential entropy can be negative, so a negative value is not in itself pathological, and we did not independently verify the exact reduction in the logging path. We therefore use ``entropy collapse'' operationally to mean a sharp fall of logged entropy relative to the run's earlier values, not the sign of the value; the historical $-0.53$ is simply an unusually low observed value, with no demonstrated pathological threshold.
+\textbf{Entropy metric and ``collapse.} The policy has two continuous action dimensions $(v,\omega)$. Training uses Ray RLlib 2.55.1 on the old (ModelV2) API stack with the PyTorch framework. For a box action space RLlib selects \texttt{TorchDiagGaussian}, whose entropy (per its source) is the per-dimension Gaussian entropy summed over the two action dimensions; PPO logs its mean over the training batch (all agents and timesteps in the batch, with the shared policy). It is the \emph{differential} entropy of the unsquashed Gaussian, before action clipping or normalization, so it can be negative and a negative value is not in itself pathological. We therefore use ``entropy collapse'' operationally to mean a sharp fall of logged entropy relative to the run's earlier values, not the sign of the value; the historical $-0.53$ is simply an unusually low observed value, with no demonstrated pathological threshold.
 
 \textbf{Original observation.} The first configuration left GAE $\lambda$
 and the entropy coefficient at RLlib's defaults ($1.0$ and $0.0$), used a
@@ -131,9 +131,7 @@ Neither mechanism was tested. We also stated that a batch held ``three to
 four'' episodes; in the runs reported below it held two.
 
 \textbf{Proposed correction.} $\lambda=0.95$; entropy coefficient $0.01$;
-train batch $700$ with $90$-step episodes (more distinct episodes per
-iteration for similar wall-clock time, since episode-reset overhead is
-fixed); collision penalty $-8$ and coverage weight $4.0$. We considered but
+train batch $700$ with $90$-step episodes (more distinct episodes per iteration at the same nominal iteration count; total steps and wall-clock time are reported below); collision penalty $-8$ and coverage weight $4.0$. We considered but
 did not pursue curriculum learning and behavior-cloning warm starts.
 
 \section{Controlled Test}
@@ -164,14 +162,14 @@ in $\lambda$, entropy coefficient, batch size, episode length and reward
 scale, and they collect different numbers of steps ($4{,}500$ against
 $10{,}800$, because sampling ends on whole episodes; the nominal $15\times700$
 is $10{,}500$). We therefore cannot attribute any difference to a single
-change. No coverage or other task metric was logged and the checkpoints were
+change; the comparison tests a configuration-level intervention, not any individual hyperparameter mechanism. No coverage or other task metric was logged and the checkpoints were
 not retained, so we say nothing here about task performance.
 
 \begin{table}[h]
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\caption{Six independent $15$-iteration training runs. Entropy is the policy entropy logged by RLlib on each iteration's training batch (see Section~\ref{sec:system}); $\Delta$ is iteration~15 minus iteration~1. Return columns are over the new episodes of each iteration (30 episodes per original run, about 120 per corrected run). Return scales differ between configurations.}
+\caption{Six independent $15$-iteration training runs. Entropy is the RLlib-reported batch-mean differential entropy, summed over the two continuous action dimensions (Section~\ref{sec:system}); $\Delta$ is iteration~15 minus iteration~1. Return columns are over the new episodes of each iteration (30 episodes per original run, about 120 per corrected run). Return scales differ between configurations.}
 \label{tab:runs}
 \begin{tabular}{llccccccc}
 \toprule
@@ -204,7 +202,7 @@ $1.50$. No run approached the reported $-0.53$.
 \textbf{The corrected configuration gave numerically higher entropy, not statistically distinguishable at $n=3$.}
 Entropy at iteration 15 was $1.95$, $2.12$ and $2.48$ (mean $2.18$); the
 difference in means is $-0.475$ (original minus corrected), exact $p=0.10$,
-the smallest value attainable at $n=3$. The difference in means is $+0.48$ in favour of the corrected arm, with a Welch $95\%$ interval of $[-0.08,\,1.03]$ (Welch--Satterthwaite $\mathrm{df}\approx3.6$); the interval is wide and includes zero, and it rests on normality assumptions that three runs cannot check. Because the corrected arm also received $2.4\times$ as many environment steps by iteration~15, any entropy difference cannot be separated from additional training exposure, let alone attributed to a single hyperparameter. Entropy rose over training in all
+the smallest value attainable at $n=3$. The difference in means is $+0.48$ in favour of the corrected arm, with a model-based, descriptive Welch $95\%$ interval of $[-0.08,\,1.03]$ (Welch--Satterthwaite $\mathrm{df}\approx3.6$); the interval is wide and includes zero, and it rests on normality assumptions that three runs cannot check. Because the corrected arm also received $2.4\times$ as many environment steps by iteration~15, any entropy difference cannot be separated from additional training exposure, let alone attributed to a single hyperparameter. Entropy rose over training in all
 three corrected runs ($+0.36$, $+0.53$, $+0.90$) and was mixed in the
 original runs ($+0.14$, $-0.45$, $+0.48$); the difference in the change is
 $-0.54$, $p=0.20$. Mean entropy over the 15 iterations differed by only
