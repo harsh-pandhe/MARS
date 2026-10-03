@@ -58,6 +58,10 @@ checkpoints/*
 !checkpoints/repro_check.json
 !checkpoints/sweep_scaling_results.json
 !checkpoints/ablation_results/
+!checkpoints/paper2_ab/
+!checkpoints/paper2_ab/*.jsonl
+!checkpoints/paper2_ab/summary.json
+!checkpoints/paper2_ab/entropy_returns.png
 !checkpoints/ablation_results/*.json
 !checkpoints/mappo_baseline/
 !checkpoints/mappo_baseline/**

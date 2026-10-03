@@ -3,356 +3,284 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{hyperref}
+\usepackage[pdftitle={Entropy Collapse Under a Small Sample Budget in Physics-in-the-Loop MAPPO: A Diagnosis That Did Not Reproduce},pdfauthor={Harsh Pandhe},pdfkeywords={multi-agent reinforcement learning, MAPPO, entropy collapse, sample budget, reproducibility, negative results}]{hyperref}
 \usepackage{authblk}
 \usepackage{setspace}
-\usepackage{xcolor}
 \onehalfspacing
 
 \newcommand{\si}[1]{\mathrm{#1}}
-\newcommand{\TODO}[1]{{\color{red}\textbf{[#1]}}}
 
-\title{Sample-Efficient MAPPO for Physics-in-the-Loop Multi-Robot Training:\\
-Diagnosing and Correcting Entropy Collapse Under a\\
-Thousand-Step, Not Million-Step, Budget}
+\title{Entropy Collapse Under a Small Sample Budget in\\
+Physics-in-the-Loop MAPPO: A Diagnosis That Did Not Reproduce}
 \author[1]{Harsh Pandhe}
 \affil[1]{Independent Research \\ \texttt{harshpandhehome@gmail.com}}
-\date{}
+\date{October 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
 \noindent
-Multi-agent reinforcement learning (MARL) sample-efficiency work
-overwhelmingly assumes access to a fast, often GPU-parallelized simulator,
-where the practical constraint is wall-clock per environment step, not the
-number of steps a single rollout worker can collect. This assumption breaks
-down for physics-in-the-loop robotics training against a general-purpose
-simulator (Gazebo Sim) with no massively-parallel rollout path: each
-environment step costs real wall-clock time regardless of parallelization
-strategy, and a training budget of thousands, not millions, of environment
-steps is a hard practical ceiling, not a simplifying choice. We report a
-directly observed failure mode under this constraint -- a centralized-critic
-MAPPO policy for cooperative multi-robot area coverage, trained for
-$4{,}500$ total environment steps ($15$ iterations, train batch size $300$),
-whose policy entropy collapsed to $-0.53$ by the final iteration while
-episode returns swung between $-227$ and $+3$ within the same $3$--$4$
-sampled episodes -- and diagnose it as a direct consequence of leaving
-RLlib's advantage-estimation ($\lambda=1.0$) and exploration-pressure
-($\text{entropy\_coeff}=0.0$) hyperparameters at defaults tuned for
-much larger batch regimes. We derive a specific, mechanistically justified
-correction (reduced GAE $\lambda$, a nonzero entropy bonus, reward
-rebalancing to reduce per-episode return variance, and batch/episode-length
-adjustments that increase distinct-episode count per iteration without
-increasing wall-clock), implement it in a public codebase, and report the
-diagnosis, the fix, and its expected mechanism in full; we could not
-complete the corrected training run's full empirical validation in this
-revision due to an unrelated infrastructure fault (a segmentation fault in
-the local PyTorch/CUDA installation, confirmed independent of the training
-code by three reproducible crash attempts) and report this transparently as
-an open item alongside the diagnosis and proposed fix.
+Training multi-robot policies against a general-purpose, real-time simulator
+(Gazebo) limits a single experiment to thousands rather than millions of
+environment steps. In an early run of a centralized-critic MAPPO policy for
+three-robot area coverage ($15$ iterations, $4{,}500$ steps, RLlib default
+GAE $\lambda=1.0$ and entropy coefficient $0.0$), we recorded policy entropy
+falling to $-0.53$ and episode returns between $-227$ and $+3$, and
+attributed this to the default hyperparameters. We proposed a correction
+(smaller $\lambda$, a nonzero entropy bonus, a larger batch, shorter episodes
+and a rebalanced reward). The raw logs of that run were not kept, and the
+attribution was never tested against a control. Here we test it: six
+independent training runs, three per configuration, with per-iteration
+metrics logged. We did not reproduce the collapse. Under the original
+defaults, entropy at iteration 15 was $1.75$, $1.50$ and $1.87$ (minimum
+$0.79$ in one run, which then recovered), nowhere near $-0.53$. Under the
+corrected configuration it was $1.95$, $2.12$ and $2.48$, higher in all
+three runs (entropy rose by $0.36$ to $0.90$ over training, against
+$-0.45$ to $+0.48$ for the original), but with three runs per arm the
+smallest attainable two-sided permutation $p$ is $0.10$, which is also the
+value obtained. Per-episode return spread did not differ between arms
+($72$ vs.\ $67$), and mean returns were negative throughout and did not clearly improve in either arm. The
+comparison changes five things at once and logs no task metric, so it
+cannot say which change matters or whether the correction improves
+coverage. We conclude that the original diagnosis, built from one
+unreplicated run, is not supported, that run-to-run variability in entropy
+is large enough for a single run to mislead, and that the corrected
+configuration raises entropy modestly without our having shown a benefit.
 \end{abstract}
 
-\noindent\textbf{Keywords:} multi-agent reinforcement learning, sample
-efficiency, MAPPO, proximal policy optimization, robotics, entropy collapse
+\noindent\textbf{Keywords:} multi-agent reinforcement learning, MAPPO,
+entropy collapse, sample budget, reproducibility, negative results
 
 \section{Introduction}
-Sample efficiency in deep reinforcement learning is usually studied under an
-implicit assumption: environment steps are cheap enough, or parallelizable
-enough, that the real constraint is algorithmic (how much a policy improves
-per gradient update) rather than infrastructural (how many environment steps
-can physically be collected before an experiment's wall-clock budget is
-spent). GPU-accelerated physics simulators built for exactly this
-assumption -- running thousands of environment instances
-concurrently -- have become the default substrate for sample-efficiency
-research in robot learning. This is a reasonable choice when the target
-deployment simulator supports it. It is not a universal property of robotics
-simulation: general-purpose robotics simulators used for realistic sensor
-modeling, ROS integration, and physically detailed multi-robot interaction
-(collision geometry, LiDAR ray-casting, differential-drive dynamics) are
-frequently run as a single real-time (or near-real-time) instance, because
-the fidelity that makes them useful for the target application is exactly
-what makes naive massive parallelization impractical without dedicated
-infrastructure investment most individual researchers and small teams do not
-have. Under this constraint, a training budget of thousands of environment
-steps -- not the millions typical of parallelized-simulator MARL
-benchmarks -- is not a choice, it is the wall-clock-bounded ceiling.
+Sample-efficiency work in deep reinforcement learning usually assumes that
+environment steps are cheap or parallelizable. General-purpose robotics
+simulators used for sensor-level fidelity (LiDAR ray casting, collision
+geometry, ROS integration) are often run as a single real-time instance,
+which makes a budget of thousands of steps per experiment a practical
+ceiling rather than a choice. Under such budgets a batch contains only a few
+complete episodes, and the usual intuitions about advantage-estimation
+variance and exploration pressure are worth examining.
 
-We report a concrete instance of what happens to a standard MARL algorithm
-(MAPPO~\cite{yu2022mappo} with a centralized critic, CTDE) under exactly this
-constraint, diagnose the failure mechanistically rather than empirically
-alone, and derive a correction from that mechanism. Our contribution is not
-a new algorithm; it is a grounded case study connecting a specific,
-reproducible failure (entropy collapse under a tiny, wall-clock-bounded
-sample budget) to specific hyperparameter and reward-design choices, in a
-setting -- physics-in-the-loop multi-robot training with no fast-simulator
-escape hatch -- that the dominant sample-efficiency literature does not
-directly address.
+This paper began as a diagnosis. After one early training run showed what
+looked like entropy collapse, we traced it, by reasoning about the
+configuration, to RLlib's default $\lambda=1.0$ and entropy coefficient
+$0.0$, proposed a correction, and wrote it up as a mechanistic case study. It
+is now a report on testing that diagnosis. We ran the control we should have
+run first, and the result does not support the original account. We report it
+because the failure to reproduce is informative: it shows how a causal story
+assembled from a single unreplicated run can look convincing and be wrong,
+and it gives a replicated baseline for entropy trajectories in this setting.
+The claim is narrow. We do not claim that default hyperparameters are safe in
+small-batch multi-agent training in general, only that in this system, with
+three runs per arm, we did not see the collapse we reported.
 
 \section{Related Work}
-Yu et al.~\cite{yu2022mappo} establish MAPPO with a centralized critic as
-a strong, simple CTDE baseline for cooperative multi-agent games, and is the
-algorithm family we build on; their sample-efficiency results, like most of
-the literature that follows, are reported in a regime with orders of
-magnitude more environment steps than are available under our constraint.
-Sample-efficiency techniques aimed explicitly at closing this gap
-increasingly rely on differentiable simulation or model-based rollouts to
-reduce real-environment sample requirements by large
-factors~\cite{asymmetricphysics2026,agilemotor2024} -- a complementary but
-architecturally distinct strategy from the hyperparameter- and
-reward-design-level correction we study, and one that requires a
-differentiable or learned dynamics model not assumed available here. Masked
-reconstruction and other representation-learning approaches improve MARL
-sample efficiency by extracting more training signal per environment
-step~\cite{maskedreconstruction2023}, a strategy compatible with and
-potentially complementary to the correction we propose, though we do not
-implement it here. Physics-informed MARL for distributed multi-robot
-problems~\cite{physicsinformedmarl2024} incorporates physical structure
-directly into the learning problem, again a complementary direction. None of
-this literature, to our knowledge, specifically characterizes the entropy
-collapse and advantage-variance failure mode we report as a direct
-consequence of applying default single-agent PPO hyperparameters
-unmodified in a small-batch, physics-in-the-loop multi-agent setting.
+Yu et al.~\cite{yu2022mappo} establish MAPPO with a centralized critic as a
+strong baseline for cooperative multi-agent games; their results are
+reported with far more environment steps than are available here. Work aimed
+at closing the sample-budget gap includes differentiable surrogate models
+alongside a non-differentiable simulator~\cite{asymmetricphysics2026} and
+world-model-based learning without RL~\cite{agilemotor2024}, which require a
+learned or differentiable dynamics model that we do not assume. Masked
+reconstruction as an auxiliary task improves sample efficiency in
+value-based MARL~\cite{maskedreconstruction2023}, and physics-informed
+structure has been used for distributed multi-robot
+learning~\cite{physicsinformedmarl2024}; both are complementary to the
+hyperparameter-level question studied here. Henderson et
+al.~\cite{henderson2018deep} show that results in deep RL depend heavily on
+random seeds, implementation details and the number of runs, which is the
+concern our replication illustrates. A companion study~\cite{pandhe2026mappo}
+evaluates the corrected configuration's downstream coverage performance
+against a classical planner.
 
-\section{System and Training Setup}
+\section{System and the Original Diagnosis}
 \label{sec:system}
-The learned system is a shared MAPPO policy for a three-robot TurtleBot3
-swarm performing cooperative area coverage in Gazebo Sim (ROS~2 Jazzy),
-trained via Ray RLlib. The actor is a permutation-invariant network:
-ego features ($28$-dim: LiDAR, goal, velocity) are concatenated with a
-masked mean-pooled embedding of up to $9$ neighbors' relative
-$(\text{distance}, \text{angle})$, each processed by a shared two-layer MLP.
-The critic is centralized: it additionally consumes a masked mean-pooled
-embedding of all teammates' joint (observation, action) pairs, following the
-standard CTDE recipe. Training uses \texttt{num\_env\_runners=0} (Gazebo must
-run in-process; RLlib's usual multi-worker parallel-rollout path is
-unavailable), so every environment step is collected serially against
-real-time (or near-real-time) physics -- the exact constraint motivating this
-paper.
+The system is a shared MAPPO policy for three TurtleBot3 robots performing
+cooperative area coverage in Gazebo Harmonic (ROS~2 Jazzy), trained with Ray
+RLlib. Each robot observes a 46-dimensional vector: 24 LiDAR ranges, goal
+distance and bearing, linear and angular velocity, and nine neighbor slots of
+(distance, bearing). Each neighbor pair is embedded by a two-layer ReLU
+network ($2\to16\to16$), masked and mean-pooled, concatenated with the 28 ego
+features, and passed through a two-layer Tanh actor ($44\to64\to64$). A
+centralized critic ($76\to64\to64\to1$, Tanh) takes the same 44 features plus
+a mean-pooled embedding ($48\to32\to32$, ReLU) of the other agents'
+observation--action pairs. Training runs with \texttt{num\_env\_runners}=0,
+since Gazebo must run in the main process, so all rollouts are serial.
+Learning rate $10^{-4}$, PPO clip $0.2$, $\gamma=0.99$, $5$ epochs and
+minibatch size $64$ are common to all runs.
 
-\textbf{Baseline configuration (the diagnosed failure).} $15$ training
-iterations, train batch size $300$, minibatch size $64$, $5$ epochs per
-iteration, learning rate $1\times10^{-4}$, PPO clip $0.2$, discount
-$\gamma=0.99$, episode length (\texttt{max\_steps}) $150$,
-\texttt{rollout\_fragment\_length} $150$. Critically, GAE $\lambda$ and
-\texttt{entropy\_coeff} were left at RLlib's PPO defaults ($1.0$ and $0.0$
-respectively) -- i.e., no advantage-variance reduction and no exploration
-bonus. Total training budget: $15 \times 300 = 4{,}500$ environment steps.
+\textbf{Original observation.} The first configuration left GAE $\lambda$
+and the entropy coefficient at RLlib's defaults ($1.0$ and $0.0$), used a
+train batch of $300$ steps, $150$-step episodes, a collision penalty of
+$-20$ and a coverage weight of $2.0$. In one $15$-iteration run ($4{,}500$
+steps) we recorded final-iteration entropy of $-0.53$ and episode returns
+between $-227$ and $+3$. These figures come from our notes of that run; its
+logs were not archived, and we cannot re-derive them. The original account
+attributed the entropy to two mechanisms: a $\lambda=1.0$ Monte-Carlo
+estimator is high-variance when a batch holds only a few episodes, and a zero
+entropy coefficient exerts no pressure against premature convergence.
+Neither mechanism was tested. We also stated that a batch held ``three to
+four'' episodes; in the runs reported below it held two.
 
-\section{Diagnosis}
-\label{sec:diagnosis}
-With train batch size $300$ split across $3$ agents over episodes up to
-$150$ steps, a single training iteration collects on the order of
-$3$--$4$ complete episodes. Two consequences follow directly from the
-baseline configuration:
+\textbf{Proposed correction.} $\lambda=0.95$; entropy coefficient $0.01$;
+train batch $700$ with $90$-step episodes (more distinct episodes per
+iteration for similar wall-clock time, since episode-reset overhead is
+fixed); collision penalty $-8$ and coverage weight $4.0$. We considered but
+did not pursue curriculum learning and behavior-cloning warm starts.
 
-\textbf{(1) High-variance advantage estimates.} GAE $\lambda=1.0$ corresponds
-to the (unbiased but high-variance) Monte-Carlo return estimator. With only
-$3$--$4$ episodes contributing to a batch, the resulting advantage estimates
-are dominated by whichever few episodes happened to be sampled, rather than
-reflecting the policy's average behavior. We observed this directly: episode
-returns within a single iteration's batch ranged from $-227$ to $+3$ --
-a swing far larger than plausible in-policy variation, indicative of an
-estimator amplifying a small sample rather than measuring a stable signal.
+\section{Controlled Test}
+\label{sec:test}
+\textbf{Design.} Two configurations, \emph{original defaults} and
+\emph{corrected}, each trained for $15$ iterations, three independent runs
+per configuration, interleaved in time (original, corrected, original, \dots)
+so that any drift in the simulator or host affects both. Everything not
+listed in Section~\ref{sec:system} is identical, including code and world.
+The Gazebo seed was fixed and RLlib's seed was not set, so runs differ
+through RLlib's own randomness and simulator timing. Per-iteration policy entropy, losses, value-function explained
+variance and episode returns were logged. The unit of independence is the
+training run, so $n=3$ per arm. The analysis plan was fixed before we looked at any
+run's results: the primary outcome is entropy at iteration 15 (original lower
+than corrected); the secondary outcome is the change in entropy from
+iteration 1 to 15; return spread is descriptive only because return scales
+differ between arms. One change was made after the first run finished: we
+replaced the within-iteration range of returns, which grows with the number
+of episodes (two against eight per iteration), with the standard deviation of
+individual episode returns. Tests are exact two-sided permutation tests on the difference
+of arm means. With three runs per arm there are $20$ permutations, so the
+smallest attainable $p$ is $0.10$.
 
-\textbf{(2) No counter-pressure against premature convergence.}
-\texttt{entropy\_coeff}$=0.0$ means the PPO objective contains no term
-rewarding continued exploration. Combined with (1) -- a high-variance,
-noisy advantage signal -- the policy has every incentive to converge quickly
-toward whatever locally low-variance (e.g.\ near-stationary, ``safe'')
-behavior it stumbles into early, since that behavior at least yields a
-consistent, low-magnitude return, rather than continuing to explore into the
-noisy, sparsely-rewarded regions of the state space where the actual task
-reward (area coverage) lives. We observed this directly: policy entropy fell
-to $-0.53$ by the final (15th) iteration, having been positive earlier in
-training -- a collapse toward a low-entropy, near-deterministic policy well
-before $4{,}500$ environment steps could plausibly be sufficient to have
-converged on a genuinely good policy for a $3$-robot coordination task.
-
-A third, compounding factor is reward design: the per-step reward combines
-a small dense progress/coverage term with sparse $\pm20$ spikes for
-goal-reaching and collision. Over an episode as short as $150$ steps
-(or fewer, if the episode terminates early on collision), a single $-20$
-collision event can dominate the cumulative return, further inflating the
-return variance described in (1) independent of the $\lambda$ setting alone.
-
-\section{Proposed Correction}
-\label{sec:correction}
-We derive a correction directly from the mechanisms in
-Section~\ref{sec:diagnosis}, rather than a general hyperparameter sweep:
-
-\begin{itemize}
-  \item \textbf{GAE $\lambda: 1.0 \to 0.95$.} Directly targets mechanism (1):
-        trades a small amount of estimator bias for a substantial reduction
-        in advantage-estimate variance, which matters more, not less, when
-        the batch contains only a handful of episodes.
-  \item \textbf{\texttt{entropy\_coeff}: $0.0 \to 0.01$.} Directly targets
-        mechanism (2): introduces continued exploration pressure
-        proportional to policy entropy, intended to prevent the observed
-        collapse to $-0.53$ before the policy has had a chance to discover
-        the coverage-reward signal.
-  \item \textbf{Reward rebalancing.} Collision penalty $-20.0 \to -8.0$
-        (reduces the dominance of a single sparse spike over a short
-        episode); coverage-reward weight $2.0 \to 4.0$ (densifies the signal
-        for the metric actually evaluated, partially independent of
-        mechanism (1)--(2) but compounding with them by reducing overall
-        return variance).
-  \item \textbf{Episode length and batch size: \texttt{max\_steps}
-        $150\to90$, train batch size $300\to700$.} Episode-reset overhead in
-        a physics-in-the-loop environment (settling time after simulator
-        reset) is fixed regardless of episode length, so shorter episodes
-        yield more distinct episodes per unit wall-clock; a larger batch
-        size directly increases the number of episodes contributing to each
-        gradient step, compounding with the $\lambda=0.95$ variance
-        reduction. Both changes increase distinct-episode count per
-        iteration without a proportional wall-clock increase, respecting
-        the paper's central constraint (Section 1) that environment steps
-        cannot simply be made cheaper.
-  \item \textbf{Iteration budget: $15\to45$.} A secondary lever, applied only
-        after the above changes, within an estimated wall-clock budget of
-        $1.6$--$3.5$ hours based on observed per-iteration timing at the
-        new batch/episode configuration.
-\end{itemize}
-
-We explicitly considered and rejected two further interventions given the
-project's wall-clock budget. \emph{Curriculum learning} (training on $1$
-robot before scaling to $3$) would require reworking spawn and goal logic
-for a variable robot count and a staged training driver, at a cost of
-multiple engineering hours, to address a credit-assignment difficulty that
-the centralized critic already handles structurally -- we judged this a
-speculative fix for a problem not diagnosed in Section~\ref{sec:diagnosis}.
-\emph{Behavior-cloning warm start} from a working non-learned frontier
-heuristic (available in the same codebase) would require an offline dataset
-pipeline, a supervised pretraining loop, and reconciling the heuristic's
-discrete waypoint targets with the continuous action space and the
-centralized critic's value function -- a distinct problem (cold-start
-exploration) from the one diagnosed here (entropy collapse from
-advantage-variance under a tiny batch), and correspondingly not pursued.
-
-\section{Validation Status}
-\label{sec:validation}
-The correction in Section~\ref{sec:correction} is implemented in the
-project's training script and verified not to regress existing
-functionality: the unit test suite (including a centralized-critic
-postprocessing test and a permutation-invariance test at swarm sizes unseen
-during training) passes unchanged, and a companion coverage-demo pipeline
-sharing the same environment code was independently re-verified end-to-end
-after the change. \TODO{We were unable to complete the corrected
-configuration's full training run in this revision: three independent
-launch attempts (including one after disabling PyTorch's dynamo/AOT-compile
-subsystem, the standard mitigation for the specific crash signature
-observed) terminated with an identical, reproducible native segmentation
-fault inside \texttt{torch.optim.adam.Adam.\_\_init\_\_}, confirmed by
-matching stack traces across all three attempts and unrelated to any
-training-code or hyperparameter change -- i.e., a local PyTorch/CUDA
-installation fault, not a finding about the correction itself. We report
-this transparently rather than fabricate or omit the pending result. A
-revision of this paper will report post-correction entropy trajectory,
-episode-return variance, and downstream task-coverage numbers once training
-infrastructure is repaired; the diagnosis (Section~\ref{sec:diagnosis}) and
-correction rationale (Section~\ref{sec:correction}) do not depend on that
-outcome and are reported in full here.}
-
-We note, as a methodological point relevant to this paper's own thesis, that
-this infrastructure fault is itself an instance of the operational fragility
-that distinguishes physics-in-the-loop training from cloud-scale,
-parallelized-simulator MARL research: a single-machine, single-instance
-training pipeline has a single point of failure that a fleet of
-identical parallel simulator instances does not, and debugging it competes
-directly for the same limited wall-clock budget that motivates this paper's
-sample-efficiency concern in the first place.
-
-\section{Discussion}
-The failure mode diagnosed here -- entropy collapse from high-variance
-advantage estimates under a batch too small for $\lambda=1.0$, compounded by
-a lack of exploration pressure and a spiky reward -- is not specific to
-multi-robot coverage or to Gazebo; it is a generic consequence of applying
-PPO/MAPPO default hyperparameters, tuned in a literature that assumes
-large-batch training, to any setting where the environment-step budget is
-externally bounded by real-time physics rather than by researcher choice.
-We expect the same diagnosis (if not the identical numeric correction) to
-transfer to other physics-in-the-loop, single-instance-simulator MARL
-settings: any setup where \texttt{num\_env\_runners} cannot exceed a small
-number for infrastructural reasons is exposed to the same batch-size/GAE
-interaction. We see the primary value of this paper as making the diagnosis
-and correction explicit and mechanistically grounded, rather than leaving
-practitioners to rediscover it empirically, run by expensive run, under a
-sample budget that makes empirical hyperparameter search itself costly.
-
-\section{Conclusion}
-Under a hard, wall-clock-bounded sample budget of thousands rather than
-millions of environment steps -- the realistic regime for physics-in-the-loop
-multi-robot training without dedicated parallel-simulation infrastructure --
-default PPO/MAPPO hyperparameters tuned for much larger batch regimes
-produce a specific, reproducible failure: high-variance advantage estimates
-from $\lambda=1.0$, compounded by zero exploration pressure, collapsing
-policy entropy before the policy has seen enough data to learn the task. We
-diagnosed this failure mechanistically in a real multi-robot coverage
-system, derived a targeted correction (reduced $\lambda$, nonzero entropy
-bonus, reward rebalancing, and episode/batch sizing that increases
-distinct-episode count without increasing wall-clock), and report both the
-diagnosis and the correction in full. Completing the correction's empirical
-validation was blocked in this revision by an infrastructure fault unrelated
-to the training methodology, reported transparently rather than concealed;
-we consider the mechanistic diagnosis and grounded correction, independently
-useful to practitioners facing the same constraint, to stand on their own
-pending that validation.
-
-\section{Postscript: Completed Empirical Validation}
-The infrastructure fault reported above (a Ray GCS crash triggered by a
-host Wi-Fi disassociation event severing the local gRPC control plane) was
-subsequently root-caused and fixed by binding Ray strictly to the loopback
-interface and capping the Plasma object store in-process rather than via an
-ineffective environment variable. Training was resumed and completed to the
-full 45-iteration budget without further infrastructure failures.
-
-The completed policy was evaluated under two separate protocols that we
-report separately rather than merge, since they differ in sample size and
-should not be treated as numerically interchangeable. \textbf{Protocol
-A} (10 episodes per condition, \texttt{cafe} only, 50 episodes total)
-gives median ACR of 38.6\% (Frontier Heuristic) versus 14.5\% (MAPPO
-nominal). \textbf{Protocol B} (single seed, one episode per condition,
-all five benchmark worlds at $N{=}3$) gives Table~\ref{tab:postscript-results}.
+\textbf{What the comparison cannot separate.} The two configurations differ
+in $\lambda$, entropy coefficient, batch size, episode length and reward
+scale, and they collect different numbers of steps ($4{,}500$ against
+$10{,}800$, because sampling ends on whole episodes; the nominal $15\times700$
+is $10{,}500$). We therefore cannot attribute any difference to a single
+change. No coverage or other task metric was logged and the checkpoints were
+not retained, so we say nothing here about task performance.
 
 \begin{table}[h]
 \centering
-\caption{Protocol B: MAPPO (45 iterations) vs.\ Frontier Heuristic, ACR (\%), single-seed, 150-step episodes, all five worlds.}
-\label{tab:postscript-results}
-\begin{tabular}{lcc}
-\hline
-World & Frontier Heuristic & MAPPO (Nominal) \\
-\hline
-cafe      & 57.0 & 28.2 \\
-warehouse & 4.3  & 3.3 \\
-depot     & 13.3 & 6.7 \\
-office    & 3.8  & 3.0 \\
-maze      & 2.7  & 2.2 \\
-\hline
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{Six independent $15$-iteration training runs. Entropy is the policy entropy logged by RLlib on each iteration's training batch; $\Delta$ is iteration~15 minus iteration~1. Return columns are over the new episodes of each iteration (30 episodes per original run, about 120 per corrected run). Return scales differ between configurations.}
+\label{tab:runs}
+\begin{tabular}{llccccccc}
+\toprule
+Configuration & Run & Ent.\ it.~1 & Ent.\ it.~15 & $\Delta$ & Ent.\ min & Mean return & Return SD & Steps \\
+\midrule
+Original defaults & 1 & 1.61 & 1.75 & +0.14 & 1.43 & $-$59 & 66 & 4{,}500 \\
+Original defaults & 2 & 1.95 & 1.50 & $-$0.45 & 0.79 & $-$62 & 67 & 4{,}500 \\
+Original defaults & 3 & 1.39 & 1.87 & +0.48 & 1.39 & $-$66 & 84 & 4{,}500 \\
+\midrule
+Corrected config & 1 & 1.59 & 1.95 & +0.36 & 1.43 & $-$43 & 61 & 10{,}800 \\
+Corrected config & 2 & 1.59 & 2.12 & +0.53 & 1.50 & $-$51 & 69 & 10{,}800 \\
+Corrected config & 3 & 1.58 & 2.48 & +0.90 & 1.58 & $-$56 & 71 & 10{,}800 \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-Contrary to the correction's intended effect, the trained policy did not
-close the gap to the heuristic under either protocol, in any of the five
-environments evaluated. Root-cause
-analysis of the trained policy's rollout behaviour (average displacement of
-$1.5\,$m over a 150-step episode, versus $5.4\,$m for the heuristic)
-indicates that the reward-shaping correction reduced entropy collapse and
-value-loss instability as intended, but did not overcome the policy's
-convergence to a low-displacement, low-reward equilibrium (near-zero
-velocity commands). This is consistent with dense per-step collision
-penalties dominating the sparse cell-discovery bonus, but we did not run a
-reward-coefficient ablation to establish this as the causal mechanism
-rather than a correlated symptom, nor a longer training budget to rule out
-undertraining; both are identified as priority follow-up experiments. We
-report this as a completed negative result under the training budget and
-reward specified in this paper. The correction proposed in this paper is
-necessary to obtain a numerically stable training run at all under a small
-sample budget, but is not, on this evidence, sufficient to produce a policy
-competitive with a classical planner on this task; the dominant remaining
-failure mode is more consistent with a reward-structure problem than an
-optimizer or sample-efficiency problem,
-and is addressed as a separate line of work.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/entropy_returns.png}
+\caption{Policy entropy (left) and mean episode return per iteration (right) for the six runs, three per configuration. The original defaults (red) do not collapse; one run dips to $0.79$ at iteration 12 and recovers.}
+\label{fig:ab}
+\end{figure}
+
+\subsection{Results}
+\textbf{Entropy did not collapse under the original defaults.} Entropy at
+iteration 15 was $1.75$, $1.50$ and $1.87$ (mean $1.71$). The lowest value
+in any original run was $0.79$ (run 2, iteration 12), after which it rose to
+$1.50$. No run approached the reported $-0.53$.
+
+\textbf{The corrected configuration gave higher entropy, not significantly.}
+Entropy at iteration 15 was $1.95$, $2.12$ and $2.48$ (mean $2.18$); the
+difference in means is $-0.475$ (original minus corrected), exact $p=0.10$,
+the smallest value attainable at $n=3$. Entropy rose over training in all
+three corrected runs ($+0.36$, $+0.53$, $+0.90$) and was mixed in the
+original runs ($+0.14$, $-0.45$, $+0.48$); the difference in the change is
+$-0.54$, $p=0.20$. Mean entropy over the 15 iterations differed by only
+$-0.16$ ($p=0.20$). Part of the corrected arm's higher entropy is
+mechanical, since an entropy bonus rewards it directly, so a difference of
+this kind does not by itself show better learning.
+
+\textbf{Return spread did not differ.} The standard deviation of per-episode
+returns was $72$ (original, pooled) against $67$ (corrected); run-level
+values were $66$, $67$, $84$ and $61$, $69$, $71$ ($p=0.6$). Individual
+episode returns reached about $-350$ in both arms, so the wide swings
+originally attributed to the defaults are not specific to them. Mean returns
+did not improve with training. Comparing the last five iterations with the
+first five, mean return was lower in four of the six runs, essentially
+unchanged in one (original run 2, $-59\to-60$) and higher in one (corrected
+run 3, $-61\to-51$). Averaged over all iterations the original runs gave
+$-59$, $-62$ and $-66$ and the corrected runs $-43$, $-51$ and $-56$, but the
+arms use different collision penalties and episode lengths, so we do not
+compare these directly.
+
+\section{Discussion}
+The original diagnosis does not survive a replicated test. The mechanisms it
+proposed remain plausible in principle, but the symptom they were meant to
+explain, entropy collapse under the defaults, did not appear in three
+attempts. Two explanations are consistent with this. The original run may
+have been an unrepresentative draw: the original arm's entropy trajectories
+are variable (final values $1.50$ to $1.87$, one transient dip to $0.79$),
+so a single run can look like collapse or like nothing. Or the early run
+differed from these in some respect we did not record, since the code
+changed between them in ways not captured in the notes. We cannot tell these
+apart, and we do not claim the first.
+
+The corrected configuration raises entropy modestly and, in this sample,
+consistently in direction, but the sample is too small to call it an
+effect, and we did not measure whether it improves the task. The companion
+study~\cite{pandhe2026mappo} trained the corrected configuration for $45$
+iterations and found it did not close the gap to a classical planner, and
+that two reward-coefficient variants of it did not produce a statistically
+significant change in coverage at three seeds. Taken together, the
+entropy correction is at most a stabilizing measure, not a demonstrated
+route to a competent policy.
+
+The practical point is about method. Entropy is cheap to log per iteration,
+and three replicate runs per configuration cost a few hours here. Had we
+done that before writing the diagnosis, we would not have published a causal
+account of a pattern that does not replicate.
+
+\textbf{Infrastructure faults.} Two distinct faults occurred during this
+project and are easy to conflate. First, a native segmentation fault in
+\texttt{torch.optim.Adam.\_\_init\_\_}; an earlier draft attributed it to a
+local installation fault, but it was a TorchDynamo compilation hook failing
+inside Ray's actor threads and was resolved by disabling TorchDynamo
+(\texttt{TORCHDYNAMO\_DISABLE=1} together with the in-process setting).
+Second, a later training run stopped at iteration 34 of 45 when a host Wi-Fi
+interruption severed Ray's control plane, which had bound to the host's
+dynamic address; binding Ray to the loopback interface and capping its
+object store in-process resolved it. Neither affects the six runs here.
+
+\section{Limitations}
+Three runs per arm is small: the smallest attainable $p$ is $0.10$, so no
+comparison here can reach conventional significance, and we report the
+values instead. The comparison bundles five changes and cannot attribute an
+effect to any. Fifteen iterations is short, and entropy might diverge later;
+the original claim concerned iteration 15. We tested one environment and one
+architecture. The simulator's timing is not deterministic, so the runs differ
+from one another for reasons we do not control, which is part of what a
+replicate measures. We did not log a task metric or keep the checkpoints, so
+we make no claim about coverage. The original run's logs are unavailable, so
+the failure to reproduce it cannot be traced to a cause.
+
+\section{Conclusion}
+A diagnosis of entropy collapse from default RLlib hyperparameters,
+formed from one unreplicated run, was not reproduced in three runs of the
+same configuration: entropy at iteration 15 stayed between $1.50$ and
+$1.87$. The corrected configuration raised entropy modestly in all three
+runs without reaching significance at the attainable sample size, and we did
+not measure a task benefit. We report the failure to reproduce, the
+replicated entropy trajectories and the scripts that produced them, in the
+hope that the baseline is more useful than the original diagnosis was.
+
+\paragraph{Data and code availability.} Per-iteration logs for all six runs,
+the analysis summary and the scripts are in the project repository, under
+\url{checkpoints/paper2_ab/} and \url{scripts/} (files
+\url{paper2_ab_entropy.sh} and \url{paper2_ab_analyze.py}), archived at
+\url{https://doi.org/10.5281/zenodo.22758286}.
 
 \bibliographystyle{plain}
 \bibliography{topic1_references}

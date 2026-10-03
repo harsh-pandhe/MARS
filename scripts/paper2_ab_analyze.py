@@ -3,8 +3,8 @@
 Pre-specified before any data were collected:
   Primary:   entropy at iteration 15, original < corrected.
   Secondary: entropy change (iter 15 - iter 1), original more negative.
-  Descriptive only: within-iteration return spread (scale differs between
-             arms: different collision penalty and episode length).
+  Descriptive only: per-episode return SD (scale differs between arms:
+             different collision penalty and episode length).
 Unit of independence: the training run (rep), n per arm = number of reps.
 """
 import glob, json, os, sys, itertools, statistics as st
@@ -22,12 +22,13 @@ summary = {"per_run": {}, "per_arm": {}}
 for arm, reps in runs.items():
     for rep, recs in reps.items():
         ent = series(recs, "entropy")
-        spread = [r["episode_reward_max"] - r["episode_reward_min"] for r in recs if r["episodes_this_iter"] > 1]
+        # RLlib's episode-return list is a rolling window; keep only each iteration's new episodes
+        eps = [x for r in recs for x in (r["episode_returns"][-r["episodes_this_iter"]:] if r["episodes_this_iter"] else [])]
         summary["per_run"][f"{arm}_rep{rep}"] = {
             "entropy_iter1": ent[0], "entropy_iter15": ent[14], "entropy_delta": ent[14] - ent[0],
             "entropy_min": min(ent), "entropy_mean": st.mean(ent),
             "mean_return": st.mean(series(recs, "episode_reward_mean")),
-            "mean_within_iter_return_spread": st.mean(spread) if spread else None,
+            "episode_return_sd": st.stdev(eps), "n_episodes": len(eps), "frac_positive_return": sum(x > 0 for x in eps) / len(eps),
             "mean_episodes_per_iter": st.mean(series(recs, "episodes_this_iter")),
             "env_steps_total": recs[-1]["num_env_steps_sampled"],
             "vf_explained_var_final": recs[14]["vf_explained_var"],
@@ -40,7 +41,7 @@ for arm, reps in runs.items():
                 "sd": round(st.stdev(v), 3) if len(v) > 1 else None}
     summary["per_arm"][arm] = {"n": len(pr), **{k: agg(k) for k in
         ["entropy_iter1", "entropy_iter15", "entropy_delta", "entropy_min", "mean_return",
-         "mean_within_iter_return_spread", "mean_episodes_per_iter", "env_steps_total"]}}
+         "episode_return_sd", "mean_episodes_per_iter", "env_steps_total"]}}
 
 def perm_p(a, b):
     """Exact two-sided permutation test on the difference of means."""
@@ -51,7 +52,7 @@ def perm_p(a, b):
     return cnt / tot
 if {"old", "corrected"} <= set(runs):
     tests = {}
-    for k in ["entropy_iter15", "entropy_delta", "mean_within_iter_return_spread"]:
+    for k in ["entropy_iter15", "entropy_delta", "entropy_mean", "episode_return_sd"]:
         a = [summary["per_run"][f"old_rep{r}"][k] for r in runs["old"]]
         b = [summary["per_run"][f"corrected_rep{r}"][k] for r in runs["corrected"]]
         tests[k] = {"old_mean": round(st.mean(a), 3), "corrected_mean": round(st.mean(b), 3),

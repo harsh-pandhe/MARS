@@ -211,7 +211,7 @@ other controllers, which we identify as a natural follow-up diagnostic.
 Training
 used PPO clip 0.2, $\gamma=0.99$, GAE $\lambda=0.95$, learning rate
 $10^{-4}$, entropy coefficient 0.01, train batch size 700, minibatch size
-64, 5 SGD epochs per iteration, for 45 iterations (approximately 31{,}500
+64, 5 SGD epochs per iteration, for 45 iterations (approximately 32{,}400
 environment transitions in total). We report this total transition count
 explicitly because ``45 iterations'' alone does not convey the sample
 budget: this is on the order of $3\times10^4$ environment steps, at the
@@ -314,7 +314,7 @@ the heuristic holds higher ACR across all five worlds (e.g., 57.0\% vs.\
 28.2\% in \texttt{cafe}, a 2.0$\times$ margin).
 
 \noindent\textbf{Protocol C (reward-coefficient ablation)}: controlled
-15-iteration training budgets ($\approx 10{,}500$ transitions) across
+15-iteration training budgets ($\approx 10{,}800$ transitions) across
 three independent random seeds (42, 7, and 99), evaluating how sensitive
 the policy's displacement and coverage are to the relative weight of the
 collision penalty versus the discovery bonus, reported in
@@ -418,7 +418,7 @@ measurements of the identical quantity.
 To empirically test whether the policy's exploration failure is caused by
 the dense collision penalty term ($-8.0$) overwhelming the discovery bonus
 ($4.0$), we performed a reward ablation study under a controlled 15-iteration
-budget ($\approx 10{,}500$ transitions) with three configurations, each
+budget ($\approx 10{,}800$ transitions) with three configurations, each
 trained from scratch under identical hyperparameters: \textbf{Baseline}
 (collision penalty $8.0$, discovery bonus $4.0$, i.e.\ the coefficients
 used everywhere else in this paper), \textbf{LowPenalty} (collision
@@ -719,8 +719,8 @@ does not clearly close the gap:
     bidding to systematically dispatch robots to unexplored clusters. MAPPO,
     relying on local 24-bin LiDAR ranges and an MLP actor, must learn both
     mapping and coordinated pathfinding simultaneously from reward gradients.
-    \item \textbf{Training budget limits:} At $3.15\times 10^4$ transitions
-    (45 iterations) and $1.05\times 10^4$ transitions (15 iterations), our
+    \item \textbf{Training budget limits:} At $3.24\times 10^4$ transitions
+    (45 iterations) and $1.08\times 10^4$ transitions (15 iterations), our
     budget reflects the compute constraints of this study's experimental
     setup, not a claim about what budget is typical or sufficient more
     broadly. We cannot rule out that asymptotic training ($>10^6$ transitions) with
@@ -740,7 +740,7 @@ across all topologies precisely because its graph-search and Voronoi
 \label{sec:limitations}
 We summarize the primary methodological and empirical limitations of this study:
 \begin{enumerate}
-    \item \textbf{Training budget bounds:} The MAPPO policy was trained for 45 iterations ($3.15\times 10^4$ transitions) in Protocol~A and 15 iterations ($1.05\times 10^4$ transitions) in Protocol~C. While sufficient to reveal the penalty-dominated low-displacement mode, we cannot establish whether asymptotic training ($>10^6$ transitions) or dense curriculum shaping would overcome this local optimum.
+    \item \textbf{Training budget bounds:} The MAPPO policy was trained for 45 iterations ($3.24\times 10^4$ transitions) in Protocol~A and 15 iterations ($1.08\times 10^4$ transitions) in Protocol~C. While sufficient to reveal the penalty-dominated low-displacement mode, we cannot establish whether asymptotic training ($>10^6$ transitions) or dense curriculum shaping would overcome this local optimum.
     \item \textbf{Controller information asymmetry:} The Frontier Heuristic relies on global occupancy grid mapping, frontier clustering, and 8-connected A* search, whereas MAPPO is restricted to local 24-bin LiDAR ranges and random safe waypoints (Table~\ref{tab:controller-assumptions}). Our comparison evaluates the performance gap between an engineered, map-aware controller and a learned local reactive policy, rather than an information-symmetric benchmark.
     \item \textbf{Single-domain training and zero-shot transfer:} The MAPPO policy was trained exclusively in \texttt{cafe}. Performance in \texttt{warehouse}, \texttt{depot}, \texttt{office}, and \texttt{maze} represents zero-shot cross-world generalization ($n{=}1$, exploratory) rather than per-environment specialized learning.
     \item \textbf{Safety filter intervention dynamics:} While all controllers share an identical OSQP unicycle Control Barrier Function (CBF) filter, intervention frequency, duration, and magnitude were not logged. We cannot rule out that the CBF filter selectively overrides MAPPO's requested velocities more frequently than the heuristic's.
