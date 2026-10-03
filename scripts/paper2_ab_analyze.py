@@ -67,12 +67,13 @@ try:                                         # figure
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(9, 3.4))
     col = {"old": "tab:red", "corrected": "tab:blue"}
-    lab = {"old": "original defaults", "corrected": "corrected config"}
+    lab = {"old": "reconstructed original", "corrected": "corrected config"}
+    sty = {"old": ("--", "o"), "corrected": ("-", "s")}
     for arm, reps in runs.items():
         for j, (rep, recs) in enumerate(sorted(reps.items())):
             x = [r["iteration"] for r in recs]
-            ax[0].plot(x, series(recs, "entropy"), color=col[arm], alpha=.7, label=lab[arm] if j == 0 else None)
-            ax[1].plot(x, series(recs, "episode_reward_mean"), color=col[arm], alpha=.7, label=lab[arm] if j == 0 else None)
+            ax[0].plot(x, series(recs, "entropy"), color=col[arm], ls=sty[arm][0], marker=sty[arm][1], ms=3, alpha=.7, label=lab[arm] if j == 0 else None)
+            ax[1].plot(x, series(recs, "episode_reward_mean"), color=col[arm], ls=sty[arm][0], marker=sty[arm][1], ms=3, alpha=.7, label=lab[arm] if j == 0 else None)
     ax[0].set_xlabel("training iteration"); ax[0].set_ylabel("policy entropy"); ax[0].legend()
     ax[1].set_xlabel("training iteration"); ax[1].set_ylabel("mean episode return"); ax[1].legend()
     fig.tight_layout(); fig.savefig(os.path.join(D, "entropy_returns.png"), dpi=200)
