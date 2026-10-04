@@ -1,5 +1,8 @@
 # MARS Swarm Benchmark Environments: Multi-World Evaluation
 
+> **Correction (Oct 2026):** the cafe "56.0% ceiling / 44% unreachable behind sealed furniture" figures below are superseded. A later 1,200-step run reached 100.0% ACR in the cafe (`checkpoints/cafe_extended_summary.json`), and a 4,000-step maze run reached 25.0% (`checkpoints/maze_extended_summary.json`), so the earlier "17.1% physical corridor ratio" is not a verified ceiling. Tables below are kept for history.
+
+
 This document persists the architectural specifications, deterministic physics configurations, and quantitative coverage benchmarking results across all 5 simulation environments supported by the **MARS (Multi-Agent Robot Swarm)** platform.
 
 ---
