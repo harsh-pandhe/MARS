@@ -31,11 +31,11 @@ attributed this to the default hyperparameters. This paper is a reproducibility 
 and a rebalanced reward). The raw logs of that run were not kept, and the
 attribution was never tested against a control. Here we test it: six
 training runs treated as independent replicates, three per configuration, with per-iteration
-metrics logged. We did not reproduce the collapse. Under a reconstruction of the original
+metrics logged. We did not observe the historical entropy-collapse pattern. Under a reconstruction of the original
 configuration, entropy at iteration 15 was $1.75$, $1.50$ and $1.87$ (minimum
 $0.79$ in one run, which then recovered), nowhere near $-0.53$. Under the
 corrected configuration it was $1.95$, $2.12$ and $2.48$, higher in all
-three runs (entropy rose by $0.36$ to $0.90$ over training, against
+three runs, although it also received $2.4\times$ as many environment steps (entropy rose by $0.36$ to $0.90$ over training, against
 $-0.45$ to $+0.48$ for the reconstruction), but with three runs per arm the
 smallest attainable two-sided permutation $p$ is $0.10$, which is also the
 value obtained. Pooled per-episode return SDs were $72$ and $67$ (descriptive only), and mean returns were negative throughout and did not clearly improve in either arm. The
@@ -88,7 +88,7 @@ learning~\cite{physicsinformedmarl2024}; both are complementary to the
 hyperparameter-level question studied here. Henderson et
 al.~\cite{henderson2018deep} show that results in deep RL depend heavily on
 random seeds, implementation details and the number of runs, which is the
-concern our replication illustrates. Colas et al.~\cite{colas2018many} and
+concern illustrated by our repeated-run experiment. Colas et al.~\cite{colas2018many} and
 Agarwal et al.~\cite{agarwal2021precipice} argue for power analysis and
 interval estimates when few runs are available, and Andrychowicz et
 al.~\cite{andrychowicz2021matters} show that on-policy implementation
@@ -140,7 +140,7 @@ did not pursue curriculum learning and behavior-cloning warm starts.
 \textbf{Design.} Two configurations, \emph{reconstructed original} and
 \emph{corrected}, each trained for $15$ iterations, three runs treated as independent
 per configuration, interleaved in time (original, corrected, original, \dots)
-so that any drift in the simulator or host affects both. Everything not
+so that any drift in the simulator or host affects both; interleaving reduces, but does not eliminate, possible temporal or host dependence between runs. Everything not
 listed in Section~\ref{sec:system} is identical, including code and world.
 The Gazebo seed was fixed and RLlib's seed was not set, so runs differ
 through RLlib's own randomness and simulator timing; they are not intended to be bitwise-reproducible, and the aim is to characterize variability under repeated launches. The experiment was resource-constrained and was intended to establish whether the historical behavior was readily reproducible, not to give a high-powered estimate of a treatment effect. Per-iteration policy entropy, losses, value-function explained
@@ -192,7 +192,7 @@ Corrected config & 3 & 1.58 & 2.48 & +0.90 & 1.58 & $-$56 & 71 & 10{,}800 \\
 \end{figure}
 
 \subsection{Results}
-\textbf{Entropy did not collapse in the reconstructed original.} Entropy at
+\textbf{The historical entropy-collapse pattern did not recur in the reconstructed configuration.} Entropy at
 iteration 15 was $1.75$, $1.50$ and $1.87$ (mean $1.71$). The lowest value
 in any original run was $0.79$ (run 2, iteration 12), after which it rose to
 $1.50$. No run approached the reported $-0.53$.
