@@ -30,7 +30,7 @@ attributed this to the default hyperparameters. This paper is a reproducibility 
 (smaller $\lambda$, a nonzero entropy bonus, a larger batch, shorter episodes
 and a rebalanced reward). The raw logs of that run were not kept, and the
 attribution was never tested against a control. Here we test it: six
-independent training runs, three per configuration, with per-iteration
+training runs treated as independent replicates, three per configuration, with per-iteration
 metrics logged. We did not reproduce the collapse. Under a reconstruction of the original
 configuration, entropy at iteration 15 was $1.75$, $1.50$ and $1.87$ (minimum
 $0.79$ in one run, which then recovered), nowhere near $-0.53$. Under the
@@ -38,8 +38,7 @@ corrected configuration it was $1.95$, $2.12$ and $2.48$, higher in all
 three runs (entropy rose by $0.36$ to $0.90$ over training, against
 $-0.45$ to $+0.48$ for the reconstruction), but with three runs per arm the
 smallest attainable two-sided permutation $p$ is $0.10$, which is also the
-value obtained. Per-episode return spread did not differ between arms
-($72$ vs.\ $67$; final-entropy SD $0.19$ vs.\ $0.27$), and mean returns were negative throughout and did not clearly improve in either arm. The
+value obtained. Pooled per-episode return SDs were $72$ and $67$ (descriptive only), and mean returns were negative throughout and did not clearly improve in either arm. The
 comparison changes five things at once and logs no task metric, so it
 cannot say which change matters or whether the correction improves
 coverage. We conclude that the original diagnosis, built from one
@@ -69,7 +68,7 @@ is now a report on testing that diagnosis. We ran the control we should have
 run first, and the result does not support the original account. We report it
 because the failure to reproduce is informative: it shows how a causal story
 assembled from a single unreplicated run can look convincing and be wrong,
-and it gives a replicated baseline for entropy trajectories in this setting.
+and it gives a three-run baseline for entropy trajectories under the reconstructed configuration.
 The claim is narrow. We do not claim that default hyperparameters are safe in
 small-batch multi-agent training in general, only that in this system, with
 three runs per arm, we did not see the collapse we reported.
@@ -115,7 +114,7 @@ since Gazebo must run in the main process, so all rollouts are serial.
 Learning rate $10^{-4}$, PPO clip $0.2$, $\gamma=0.99$, $5$ epochs and
 minibatch size $64$ are common to all runs. Runs used code commit \texttt{1a83e72}, an AMD Ryzen~5 7600 (6 cores, 12 threads), about 30~GB RAM and Ubuntu 24.04.5 LTS. Wall-clock time was about $1{,}010$~s per original-arm run and $2{,}508$~s per corrected-arm run.
 
-\textbf{Entropy metric and ``collapse.} The policy has two continuous action dimensions $(v,\omega)$. Training uses Ray RLlib 2.55.1 on the old (ModelV2) API stack with the PyTorch framework. For a box action space RLlib selects \texttt{TorchDiagGaussian}, whose entropy (per its source) is the per-dimension Gaussian entropy summed over the two action dimensions; PPO logs its mean over the training batch (all agents and timesteps in the batch, with the shared policy). It is the \emph{differential} entropy of the unsquashed Gaussian, before action clipping or normalization, so it can be negative and a negative value is not in itself pathological. We therefore use ``entropy collapse'' operationally to mean a sharp fall of logged entropy relative to the run's earlier values, not the sign of the value; the historical $-0.53$ is simply an unusually low observed value, with no demonstrated pathological threshold.
+\textbf{Entropy metric and ``collapse.} The policy has two continuous action dimensions $(v,\omega)$. Training uses Ray RLlib 2.55.1 on the old (ModelV2) API stack with the PyTorch framework. For a box action space RLlib selects \texttt{TorchDiagGaussian}, whose entropy (per its source) is the per-dimension Gaussian entropy summed over the two action dimensions; PPO logs its mean over the training batch (all agents and timesteps in the batch, with the shared policy). It is the \emph{differential} entropy of the unsquashed Gaussian, before action clipping or normalization, so it can be negative and a negative value is not in itself pathological. We therefore use ``entropy collapse'' operationally to mean a sharp fall of logged entropy relative to the run's earlier values, not the sign of the value. Because the historical run lacks raw logs, we cannot retrospectively define a quantitative threshold; ``collapse'' is a descriptive label for the historical trajectory, not a formally thresholded outcome; the historical $-0.53$ is simply an unusually low observed value, with no demonstrated pathological threshold.
 
 \textbf{Original observation.} The first configuration left GAE $\lambda$
 and the entropy coefficient at RLlib's defaults ($1.0$ and $0.0$), used a
@@ -139,15 +138,14 @@ did not pursue curriculum learning and behavior-cloning warm starts.
 \textbf{Questions and scope.} (1) Does the reconstructed original configuration reproduce the collapse? Mostly no. (2) Does the five-change correction raise entropy? Numerically yes, not established statistically. (3) Which change caused any difference? Unknown. (4) Does higher entropy give better coverage? Not tested here; the companion study~\cite{pandhe2026mappo} addresses downstream task performance, and this paper is restricted to the training-dynamics diagnosis.
 
 \textbf{Design.} Two configurations, \emph{reconstructed original} and
-\emph{corrected}, each trained for $15$ iterations, three independent runs
+\emph{corrected}, each trained for $15$ iterations, three runs treated as independent
 per configuration, interleaved in time (original, corrected, original, \dots)
 so that any drift in the simulator or host affects both. Everything not
 listed in Section~\ref{sec:system} is identical, including code and world.
 The Gazebo seed was fixed and RLlib's seed was not set, so runs differ
-through RLlib's own randomness and simulator timing. Per-iteration policy entropy, losses, value-function explained
+through RLlib's own randomness and simulator timing; they are not intended to be bitwise-reproducible, and the aim is to characterize variability under repeated launches. The experiment was resource-constrained and was intended to establish whether the historical behavior was readily reproducible, not to give a high-powered estimate of a treatment effect. Per-iteration policy entropy, losses, value-function explained
 variance and episode returns were logged. The unit of independence is the
-training run, so $n=3$ per arm. The analysis plan was fixed before we looked at any
-run's results: the primary outcome is entropy at iteration 15 (original lower
+training run, so $n=3$ per arm. The analysis plan was fixed before we examined the outcomes of the six controlled runs: the primary outcome is entropy at iteration 15 (original lower
 than corrected); the secondary outcome is the change in entropy from
 iteration 1 to 15; return spread is descriptive only because return scales
 differ between arms. One change was made after the first run finished: we
@@ -169,7 +167,7 @@ not retained, so we say nothing here about task performance.
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\caption{Six independent $15$-iteration training runs. Entropy is the RLlib-reported batch-mean differential entropy, summed over the two continuous action dimensions (Section~\ref{sec:system}); $\Delta$ is iteration~15 minus iteration~1. Return columns are over the new episodes of each iteration (30 episodes per original run, about 120 per corrected run). Return scales differ between configurations.}
+\caption{Six $15$-iteration training runs. Entropy is the RLlib-reported batch-mean differential entropy, summed over the two continuous action dimensions (Section~\ref{sec:system}); $\Delta$ is iteration~15 minus iteration~1. Return columns are over the new episodes of each iteration (30 episodes per original run, about 120 per corrected run). Return scales differ between configurations.}
 \label{tab:runs}
 \begin{tabular}{llccccccc}
 \toprule
@@ -202,15 +200,13 @@ $1.50$. No run approached the reported $-0.53$.
 \textbf{The corrected configuration gave numerically higher entropy, not statistically distinguishable at $n=3$.}
 Entropy at iteration 15 was $1.95$, $2.12$ and $2.48$ (mean $2.18$); the
 difference in means is $-0.475$ (original minus corrected), exact $p=0.10$,
-the smallest value attainable at $n=3$. The difference in means is $+0.48$ in favour of the corrected arm, with a model-based, descriptive Welch $95\%$ interval of $[-0.08,\,1.03]$ (Welch--Satterthwaite $\mathrm{df}\approx3.6$); the interval is wide and includes zero, and it rests on normality assumptions that three runs cannot check. Because the corrected arm also received $2.4\times$ as many environment steps by iteration~15, any entropy difference cannot be separated from additional training exposure, let alone attributed to a single hyperparameter. Entropy rose over training in all
+the smallest value attainable at $n=3$. The difference in means is $+0.48$ in favour of the corrected arm, with a descriptive, model-based $95\%$ Welch confidence interval of $[-0.08,\,1.03]$ (Welch--Satterthwaite $\mathrm{df}\approx3.6$); the interval is wide and includes zero, and it rests on normality assumptions that three runs cannot check. Because the corrected arm also received $2.4\times$ as many environment steps by iteration~15, any entropy difference cannot be separated from additional training exposure, let alone attributed to a single hyperparameter. Entropy rose over training in all
 three corrected runs ($+0.36$, $+0.53$, $+0.90$) and was mixed in the
 original runs ($+0.14$, $-0.45$, $+0.48$); the difference in the change is
 $-0.54$, $p=0.20$. Mean entropy over the 15 iterations differed by only
-$-0.16$ ($p=0.20$). Part of the corrected arm's higher entropy is
-mechanical, since an entropy bonus rewards it directly, so a difference of
-this kind does not by itself show better learning.
+$-0.16$ ($p=0.20$). Because the corrected configuration explicitly adds an entropy bonus, its higher logged entropy is partly an expected consequence of the modified objective rather than evidence of improved exploration or learning.
 
-\textbf{Return spread did not differ.} The standard deviation of per-episode
+\textbf{Return spread (descriptive).} The standard deviation of per-episode
 returns was $72$ (reconstructed original, pooled) against $67$ (corrected); run-level
 values were $66$, $67$, $84$ and $61$, $69$, $71$. This is descriptive only and we do not treat it as confirmatory. Individual
 episode returns reached about $-350$ in both arms (the historical note recorded $-227$ to $+3$, a different range from the one observed now), so large return swings also occurred in the corrected configuration and cannot be regarded as unique to the reconstructed defaults in these runs. Mean returns
@@ -271,7 +267,7 @@ version of the recorded configuration: entropy at iteration 15 stayed between $1
 $1.87$. The corrected configuration raised entropy modestly in all three
 runs without reaching significance at the attainable sample size, and we did
 not measure a task benefit. We report the failure to reproduce, the
-replicated entropy trajectories and the scripts that produced them, in the
+six-run entropy measurements and trajectories and the scripts that produced them, in the
 hope that the baseline is more useful than the original diagnosis was.
 
 \paragraph{Data and code availability.} Per-iteration logs for all six runs,
