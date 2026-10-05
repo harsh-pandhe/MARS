@@ -115,10 +115,10 @@ passes through it as free space. The \emph{area-coverage rate} is
 {N_{\text{cells}}-|\text{obstacle}|}\times100,
 \end{equation}
 where ``obstacle'' cells are those the robots have registered as obstacles, so
-the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
+the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric (D-ACR), measuring discovered free-space and sensing coverage rather than traversal-only coverage: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
 counted when the minimum LiDAR range is below $0.14\,\si{m}$ (the approximate
 sensor-to-bumper distance); an \emph{inter-robot proximity event} when two robots are closer
-than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. Robots start from fixed spawn positions on a line 0.7\,m apart (offsets $0,-0.7,+0.7,-1.4,\dots$\,m along one axis from the world's spawn point), identical in every episode, with all robots sharing one initial heading (world yaw $-\pi/2$ in the cafe; per-world values are set in the spawn launch files). These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
+than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. Robots start at $y=0$, $z=0.20\,\si{m}$ with yaw $-1.5708\,\si{rad}$ and world-$x$ offsets $0,-0.7,+0.7,-1.4,+1.4,-2.1,+2.1,-2.8\,\si{m}$ for robots 1--8 (the first $N$ are used), identical in every episode and in all five worlds (\texttt{spawn\_multi.launch.py}). These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
 smaller than the filter's separation buffer (Sec.~\ref{sec:safety}), so a zero count
 does not show that the margin held.
 
@@ -143,7 +143,7 @@ $72^\circ$ of the heading, forward speed becomes $-0.05\,\si{m/s}$.
 with $-0.22\le v\le0.22$, $-1.0\le\omega\le1.0$ (the action bounds, enforced as variable bounds), $0\le\delta\le10$, $P=1000$ and $\gamma=2.0$. Barrier terms come from LiDAR
 returns within $0.6\,\si{m}$, evaluated at two lookahead points ($\pm0.12\,\si{m}$
 on the heading axis) with obstacle radius $0.20\,\si{m}$, and from neighbors
-within $1.2\,\si{m}$ with a separation buffer of $0.45\,\si{m}$ (not a physical radius). The full construction of $h_k$, $A_k$ and $B_k$ is given by the released implementation (\texttt{cbf\_qp\_solver.py}). The neighbor term treats
+within $1.2\,\si{m}$ with a separation buffer of $0.45\,\si{m}$ (not a physical radius). The full construction of $h_k$, $A_k$ and $B_k$ is implemented in \texttt{cbf\_qp\_solver.py}; the exact historical experimental commit could not be recovered, as noted under Data availability. The neighbor term treats
 the neighbor's velocity as bounded and unmodeled. If the QP is infeasible the
 filter returns $(\min(0,v_{\text{nom}}),\omega_{\text{nom}})$.
 \emph{(3) Front safeguard.} Forward speed is set to $\min(0,v)$ if any of the
@@ -183,7 +183,7 @@ Tanh) takes the same 44 features plus a mean-pooled embedding
 ($48\to32\to32$) of the other agents' observation--action pairs. The
 mean-pooled embedding is invariant to neighbor order and padding position, which
 \texttt{tests/test\_permutation\_invariance.py} checks directly. Training uses
-RLlib PPO~\cite{schulman2017ppo} with a single in-process rollout worker,
+RLlib~\cite{liang2018rllib} with PPO~\cite{schulman2017ppo} with a single in-process rollout worker,
 train batch 700, $90$-step episodes, minibatch 64, 5 epochs, learning rate
 $10^{-4}$, clip 0.2, $\gamma=0.99$, GAE $\lambda=0.95$ and entropy
 coefficient $0.01$. The per-step reward is
@@ -195,7 +195,7 @@ where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ the numbe
 of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbb{I}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbb{I}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
 point from a fixed per-world list of safe positions, reassigned on arrival; it
 is less informed than the classical controller's map-aware frontier targets. The policy is purely reactive: it has no recurrent state or local map, and no spatial-memory variant was trained.
-Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is therefore an archival baseline artifact, not a statistically representative MAPPO estimate. It is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
+Evaluation uses greedy actions. All learned results in Table~\ref{tab:mx} use a single archived MAPPO checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is therefore an archival baseline artifact, not a statistically representative MAPPO estimate. It is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
 
 %==============================================================================
 \section{Results}
@@ -209,14 +209,14 @@ records are archived (Data availability).
 
 \subsection{Long-Run Reference Runs of the Classical Controller}
 Table~\ref{tab:ceil} reports one long run per world with three robots. The
-step budget differs by world and was chosen to observe the late-run behavior of the discovered-map ACR,
+step budget differs by world and was chosen to observe the late-run behavior of the D-ACR,
 so ``steps to plateau'' is the first sampled step at which ACR came within
 0.5 points of its final value; it is not a controller-versus-controller
 comparison.
 
 \begin{table}[t]
 \centering
-\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; D-ACR is discovered-map ACR (\%); clearance is the minimum inter-robot distance. Steps are environment control steps; Dist.\ is cumulative path length summed over robots.}
+\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; D-ACR is D-ACR (\%); clearance is the minimum inter-robot distance. Steps are environment control steps; Dist.\ is cumulative path length summed over robots.}
 \label{tab:ceil}
 \footnotesize
 \setlength{\tabcolsep}{2.2pt}
@@ -233,7 +233,7 @@ maze & 4{,}800 & 4{,}000 & 25.0 & 3{,}961 & 316 & 1{,}108 & 0 & 0.26 \\
 \end{tabular}
 \end{table}
 
-In 3 of 5 worlds (warehouse, depot, cafe) the discovered-map ACR reached its observed plateau before 90\% of the run, so those runs showed late-run stabilization of the discovered-map ACR, although this does not establish saturation of physical coverage; for the others the final value may still have been rising. The maze's figure should not be read as a success or a failure
+In 3 of 5 worlds (warehouse, depot, cafe) the D-ACR reached its observed plateau before 90\% of the run, so those runs showed late-run stabilization of the D-ACR, although this does not establish saturation of physical coverage; for the others the final value may still have been rising. The maze's figure should not be read as a success or a failure
 by itself: we did not measure how much of its bounding box is traversable, and
 the ACR denominator only excludes cells where a LiDAR return has registered an
 obstacle. The warehouse run recorded a very large wall-proximity count over its
@@ -242,7 +242,7 @@ long perimeter patrol after coverage saturated, which the proximity metric
 
 \subsection{Team Size}
 Table~\ref{tab:sweep} varies the number of robots from 2 to 8 in each world for
-200 steps (one run per cell). Coverage generally rose with team size, though not
+200 steps (one run per cell). Observed D-ACR generally rose with team size, though not
 monotonically (cafe, $N{=}3\to5$), and the 200-step horizon is far from the
 plateau in the larger worlds. Inter-robot proximity events occurred in 3 of 20 configurations,
 all at $N\ge5$ in the two smallest arenas (cafe and office). No other
@@ -250,7 +250,7 @@ explanation for that pattern was tested.
 
 \begin{table}[t]
 \centering
-\caption{Exploratory single-run baseline: classical controller, 200 steps, one run per cell, discovered-map ACR \% (inter-robot proximity events).}
+\caption{Exploratory single-run baseline: classical controller, 200 steps, one run per cell, D-ACR \% (inter-robot proximity events).}
 \label{tab:sweep}
 \footnotesize
 \begin{tabular}{@{}lcccc@{}}
@@ -269,7 +269,7 @@ maze & 1.1 (0) & 3.2 (0) & 6.0 (0) & 10.0 (0) \\
 \subsection{Learned versus Classical}
 Table~\ref{tab:mx} compares the trained MAPPO policy (trained on the cafe,
 zero-shot elsewhere) with the classical controller and a random walk, one
-150-step episode per cell with three robots. In this single-episode matrix the classical controller had higher observed discovered-map ACR than MAPPO in all five worlds. This single-episode matrix is exploratory;
+150-step episode per cell with three robots. In this single-episode matrix the classical controller had higher observed D-ACR than MAPPO in all five worlds. This single-episode matrix is exploratory;
 the companion study~\cite{pandhe2026mappo} reports a 10-episode cafe
 comparison in which MAPPO's median coverage (14.5\%) was below both the
 classical controller's (38.6\%) and a random walk's (29.6\%); the
@@ -280,7 +280,7 @@ system with a minimally trained learned one, not two learned policies.
 
 \begin{table}[t]
 \centering
-\caption{Exploratory single-episode baseline: Discovered-map ACR \% after 150 steps, three robots, one episode per cell. MAPPO and Random-Walk results are single stochastic realizations (MAPPO: one trained checkpoint) and serve as exploratory baselines (see Sec.~\ref{sec:testbed}).}
+\caption{Exploratory single-episode baseline: D-ACR \% after 150 steps, three robots, one episode per cell. MAPPO and Random-Walk results are single stochastic realizations (MAPPO: one trained checkpoint) and serve as exploratory baselines (see Sec.~\ref{sec:testbed}).}
 \label{tab:mx}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
@@ -336,10 +336,10 @@ run once each without a proximity event; their raw traces are not archived.
 \section{Conclusion}
 %==============================================================================
 MARS provides a documented testbed with archived code and per-run results. In the
-reported long reference runs the classical controller's discovered-map ACR
-was high in four of five worlds, observed discovered-map ACR generally increased with
+reported long reference runs the classical controller's D-ACR
+was high in four of five worlds, observed D-ACR generally increased with
 team size in the exploratory sweep, and in the single-episode matrix the
-observed MAPPO discovered-map ACR was lower than the classical controller's in all five
+observed MAPPO D-ACR was lower than the classical controller's in all five
 worlds. These results are descriptive: evaluation is not deterministic, the
 learned and classical controllers differ in information and design, the safety
 margin is soft, and several architectural claims remain untested. We release
