@@ -5,7 +5,7 @@ authors:
     given-names: "Harsh"
 title: "MARS: Multi-Agent Robot Swarm Navigation, Area Coverage, and MAPPO Benchmark Suite"
 version: 1.0.0
-date-released: 2026-09-15
+date-released: 2026-10-06
 url: "https://github.com/harsh-pandhe/MARS"
 repository-code: "https://github.com/harsh-pandhe/MARS"
 doi: "10.5281/zenodo.22758286"
@@ -27,4 +27,4 @@ preferred-citation:
   title: "Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"
   year: 2026
   doi: "10.5281/zenodo.22758286"
-  url: "https://github.com/harsh-pandhe/MARS"
+  url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699"

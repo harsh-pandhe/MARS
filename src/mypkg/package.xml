@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>mypkg</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="nandakishore@todo.todo">nandakishore</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>MARS support package for SLAM and autonomous navigation</description>
+  <maintainer email="harshpandhehome@gmail.com">Harsh Pandhe</maintainer>
+  <license>Apache-2.0</license>
 
   <depend>urdf</depend>
   <depend>xacro</depend>

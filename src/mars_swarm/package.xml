@@ -2,9 +2,9 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>mars_swarm</name>
-  <version>0.0.0</version>
-  <description>MARL Swarm Robotics in ROS 2 and Gazebo</description>
-  <maintainer email="harsh-pandhe@example.com">harsh-pandhe</maintainer>
+  <version>1.0.0</version>
+  <description>MARS: Multi-Agent Robot Swarm Navigation, Area Coverage, and MAPPO Benchmark Suite</description>
+  <maintainer email="harshpandhehome@gmail.com">Harsh Pandhe</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

@@ -1,281 +1,350 @@
-# MARS: Multi-Agent Robot Swarm Navigation & Area Coverage
+# MARS: Multi-Agent Robot Swarm Navigation, Area Coverage, and MAPPO Benchmark Suite
 
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0--frozen-blue.svg)](https://github.com/harsh-pandhe/MARS/releases/tag/v1.0.0)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22758286.svg)](https://doi.org/10.5281/zenodo.22758286)
-[![Paper](https://img.shields.io/badge/Paper-Preprint%20PDF-red.svg)](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)
-[![CI Tests](https://img.shields.io/badge/Tests-53%2F53%20Passing-brightgreen.svg)](tests/)
+[![Tests: 56/56 Passing](https://img.shields.io/badge/Tests-56%2F56%20Passing-brightgreen.svg)](tests/)
+[![SSRN: 7556699](https://img.shields.io/badge/SSRN-7556699%20(Approved)-darkblue.svg)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699)
+[![SSRN: 7567220](https://img.shields.io/badge/SSRN-7567220%20(Review)-darkblue.svg)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7567220)
+[![SSRN: 7567362](https://img.shields.io/badge/SSRN-7567362%20(Review)-darkblue.svg)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7567362)
 
-> [!NOTE]
-> **Research Preprint**: This repository hosts the code, simulation environments, trained policy checkpoints, and raw telemetry data for:
-> **"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"** (Pandhe, 2026).
-> The LaTeX sources, compiled 15-page manuscript, and figures are located in [`papers/paper1_negative_result_mappo/`](papers/paper1_negative_result_mappo/).
+MARS is an open-source ROS 2 Jazzy and Gazebo Harmonic research testbed for comparative evaluation, safety filtering, and reproducibility in multi-robot area coverage.
 
-> [!CAUTION]
-> **ARCHITECTURAL DECISION: MAPPO IS FORMALLY DEPRECATED ("DOES NOT WORK")**
-> Multi-Agent PPO (MAPPO) was rigorously benchmarked across 50 empirical trials (10 episodes per condition) and **fails to achieve viable area coverage in dense obstacle environments**. Due to sparse exploration rewards vs. dense collision penalties, MAPPO collapses into penalty-avoidance policy freezing: agents hover in place, traveling an average of only **1.5 m** per episode and achieving a median ACR of **14.5%** — trailing even pure Random Walk (**29.6%**) and the Frontier Heuristic (**38.6%**).
-> 
-> **Decision**: MAPPO is formally marked **DOES NOT WORK** and deprecated from active development. The RLlib training pipeline is frozen and preserved strictly as an academic baseline / negative result. **All active exploration, multi-robot scalability sweeps ($N \in \{2, 3, 5, 8\}$), and multi-world benchmarks officially standardize on the Decentralized Frontier Heuristic (Dynamic Voronoi + A* + Behavior Tree + Control Barrier Functions).** Do not allocate further engineering budget to MAPPO reward shaping.
+---
 
-MARS (Multi-Agent Robot Swarm) is a high-performance framework for cooperative area coverage, autonomous exploration, and safety-critical navigation across heterogeneous swarms (TurtleBot3 Waffle and Pioneer 2DX). Built on **ROS 2 Jazzy**, **Gazebo Sim (Harmonic)**, and **PettingZoo**.
+## What is MARS?
+
+MARS (Multi-Agent Robot Swarm) is a reproducible simulation testbed designed to evaluate multi-robot autonomous exploration, cooperative area coverage, and safety-critical velocity filtering under realistic physical sensing and actuation constraints.
+
+Multi-robot area coverage is frequently evaluated either in abstract grid-worlds lacking continuous dynamics and sensor occlusion, or in heavyweight robotics stacks that are difficult to reproduce across labs. MARS addresses this gap by coupling standard robotic middleware (**ROS 2 Jazzy**, **Gazebo Sim Harmonic**) with multi-agent reinforcement learning interfaces (**PettingZoo Parallel API**, **Ray RLlib**), offering an open, deterministic platform for comparing classical planners, stochastic baselines, and learned policies under identical physical observation and safety filtering pipelines.
+
+---
+
+## Research Questions / Purpose
+
+MARS was developed as a comparative, reproducibility-oriented research testbed to investigate:
+1. **Classical vs. Learned Area Coverage**: How does a decentralized frontier exploration heuristic (Dynamic Voronoi + A* + Behavior Trees) compare empirically to Multi-Agent PPO (MAPPO) and Random-Walk baselines when evaluated under identical sensor bounds and physical constraints?
+2. **Policy Failure Modes under Safety Penalties**: Why do learned policies (such as MAPPO) fail to achieve viable area coverage in obstacle-dense environments, and does reward shaping or entropy regularization resolve policy-freezing behavior?
+3. **Decoupled Safety-Filter Behavior**: How effectively can an external Quadratic Programming Control Barrier Function (QP-CBF) filter eliminate inter-agent and environmental collisions independently of nominal policy competence, and what are the practical implications of soft-slack solver relaxations?
+
+---
+
+## Main Components
+
+- **Classical Controller**: A decentralized frontier exploration engine combining Dynamic Voronoi spatial cell partitioning, Consensus-Based Bundle Auction (CBAA) task assignment over simulated range-limited radio ($d_{\text{comm}} \le 3.0\,\text{m}$), A* path search with obstacle inflation, and a formal `py_trees` mission behavior tree managing stuck recovery and perimeter patrol.
+- **Random-Walk Controller**: A stochastic baseline executing bounded random heading perturbations, providing a minimal non-learning comparison benchmark.
+- **MAPPO Controller**: A centralized-critic Multi-Agent PPO policy trained under Ray RLlib (ModelV2 API stack) with 46-dimensional observation vectors and permutation-invariant neighbor pooling.
+- **Shared Safety Stack**: A unified safety filter sitting between the controller output and the robot actuators, combining discrete rule-based collision overrides (inter-agent ACAS and emergency obstacle braking) with a C-accelerated OSQP Quadratic Programming Control Barrier Function (QP-CBF) solver.
+- **ROS 2 / Gazebo Environment**: High-fidelity simulation utilizing Gazebo Harmonic, namespaced multi-robot spawning (`tb1`, `tb2`, `tb3`, ...), isolated `ros_gz_bridge` parameter bindings, and single-threaded ODE physics solvers (`<thread_count>1</thread_count>`) for deterministic execution.
+- **PettingZoo Interface**: A parallel multi-agent Python environment wrapper (`multi_env_wrapper.py`) supporting vectorized OpenCV grid raycasting, standardized step/reset loops, and Gym spaces.
+- **Metrics Engine**: An automated telemetry logger (`swarm_telemetry.py`) calculating live Discovered-Map Area Coverage Rate (D-ACR), cell overlap redundancy, normalized kinetic energy $\int (v^2 + \omega^2)\,dt$, minimum time between deadlocks (MTBD), and proximity event counts.
+
+---
+
+## Architecture
 
 ```mermaid
 graph TD
-    subgraph ROS 2 & Gazebo Environment
-        GZ[Gazebo Simulation] <--> Bridge[ros_gz_bridge]
-        Bridge <--> Node[SwarmNode]
+    subgraph Decision & Planning Layer
+        C[Classical Controller<br/>Dynamic Voronoi + CBAA + A* + BT]
+        R[Random-Walk Baseline<br/>Stochastic Heading]
+        M[MAPPO Baseline<br/>Ray RLlib Centralized Critic]
     end
 
-    subgraph Decentralized Swarm Engine [Primary]
-        Node --> |LaserScan & Odom| DF[Scan-Matching Localizer]
-        DF --> |Corrected Pose| Voronoi[Dynamic Voronoi CBAA Allocator]
-        Voronoi --> |Frontier Targets| BT[py_trees Behavior Tree & A*]
-        BT --> |Nominal v, w| CBF[Fast Micro-QP CBF Solver]
-        CBF --> |Safe v, w| Bridge
+    subgraph Shared Safety Filter
+        SW[Controller Switch]
+        OR[Discrete Overrides<br/>ACAS Inter-Agent Brake + Front E-Stop]
+        CBF[Soft-Slack OSQP QP-CBF<br/>d_safe_obs=0.20m, d_safe_agent=0.45m]
     end
 
-    subgraph MARL Pipeline [Deprecated Baseline]
-        Node --> Obs[PettingZoo Obs 46-dim]
-        Obs --> MAPPO[Ray RLlib MAPPO Critic]
+    subgraph Simulation Platform
+        GZ[Gazebo Harmonic Sim<br/>Single-Threaded ODE, Seed 42]
+        BR[ros_gz_bridge / ROS 2 Jazzy]
     end
+
+    subgraph Physical Swarm World
+        W[Multi-Robot Arena<br/>TurtleBot3 Waffle N in {2, 3, 5, 8}]
+    end
+
+    subgraph Evaluation & Telemetry
+        DACR[D-ACR Coverage Metric<br/>Discovered-Map Denominator]
+        TEL[Telemetry Engine<br/>run_summary.json + Heatmaps]
+    end
+
+    C --> SW
+    R --> SW
+    M --> SW
+    SW --> |Nominal v, w| OR
+    OR --> |Candidate v, w| CBF
+    CBF --> |Filtered Safe v, w| BR
+    BR <--> GZ
+    GZ <--> W
+    W --> |LiDAR, Odom, Contact| DACR
+    DACR --> TEL
 ```
 
 ---
 
-## System Architecture & Module Map
+## Environments
 
-| Module | Location | Description & Role |
-| :--- | :--- | :--- |
-| **Micro-QP CBF Solver** | [`cbf_qp_solver.py`](src/mars_swarm/mars_swarm/cbf_qp_solver.py) | High-speed C-accelerated OSQP quadratic program solver ($24\text{ }\mu\text{s}$) filtering nominal velocity commands. Enforces dual-lookahead front/rear collision barriers ($d_{safe}^{obs}=0.20\text{m}$) and inter-agent relative distance barriers ($d_{safe}^{agent}=0.45\text{m}$). |
-| **Decentralized Coordinator** | [`decentralized_coordinator.py`](src/mars_swarm/mars_swarm/decentralized_coordinator.py) | Fully decentralized swarm coordinator using Dynamic Voronoi cell partitioning and Consensus-Based Bundle Auction (CBAA) protocol over simulated range-limited radio ($d_{comm} \le 3.0\text{m}$). |
-| **Behavior Tree Controller** | [`mission_behavior_tree.py`](src/mars_swarm/mars_swarm/mission_behavior_tree.py) | Formal `py_trees` mission state machine. Manages stuck recovery maneuvers, frontier exploration, and boundary-safe perimeter patrol upon coverage saturation. |
-| **Scan-Matching Localizer** | [`scan_matching_localizer.py`](src/mars_swarm/mars_swarm/scan_matching_localizer.py) | 2D Correlative Distance-Field scan matcher (`cv2.distanceTransform`) matching LiDAR scans against known map obstacles, eliminating wheel slip and dead-reckoning drift over long horizons. |
-| **Swarm Telemetry Engine** | [`swarm_telemetry.py`](src/mars_swarm/mars_swarm/swarm_telemetry.py) | Real-time telemetry logger streaming scalar curves to TensorBoard and exporting structured `run_summary.json` manifests (ACR curve, normalized energy $\int(v^2+\omega^2)dt$, MTBD, and clearance distribution). |
-| **Multi-Env Simulation Wrapper** | [`multi_env_wrapper.py`](src/mars_swarm/mars_swarm/multi_env_wrapper.py) | PettingZoo parallel multi-agent environment with vectorized OpenCV C++ grid raycasting, inter-agent Active Collision Avoidance (ACAS), and ROS 2 Jazzy bridge coordination. |
+MARS includes five deterministic Gazebo Harmonic worlds, each configured with single-threaded ODE solvers (`<thread_count>1</thread_count>`) and fixed PRNG seeds:
 
----
-
-## Key Features
-
-1. **Deterministic Single-Threaded Physics:** World configurations (`cafe.sdf`, `warehouse.sdf`) configure single-threaded ODE solvers (`<thread_count>1</thread_count>`) and pass explicit PRNG seeds via `--seed` for 100% bitwise-reproducible benchmark replays.
-2. **Robust Environment Isolation:** Namespaced spawn configurations launching multiple TurtleBot3 Waffles (`tb1`, `tb2`, `tb3`) with fully isolated topic parameter bridges.
-3. **Cooperative Area Coverage Reward:** High-resolution occupancy and coverage grids with obstacle cell exclusion for fair ACR evaluation.
-4. **Multi-Agent Reinforcement Learning (MARL):** Policy sharing MAPPO (Multi-Agent PPO) algorithm implementation using PyTorch under Ray RLlib.
-5. **Transient Noise Rejection:** Custom settling delays and ROS 2 event flushes to prevent transient start-of-episode collision reports.
-6. **Fault-Tolerant Resilience Testing:** An independent ROS 2 node (`robot_killer`) designed to hijack and disable individual robots mid-episode to evaluate swarm adaptation capabilities.
-7. **Dual GUI Visualization (Gazebo + RViz):** Runs Gazebo Sim and RViz2 side-by-side with synchronized robot frames, odometry paths, and colored LaserScan point clouds.
-8. **Automated CI/CD Regression Pipeline:** GitHub Actions workflow executing the 30-test suite across CBF safety, A* pathfinding, Voronoi partitioning, and telemetry.
+| World | Arena Dimensions | Cells ($0.4\,\text{m}$ grid) | Geometric Description |
+| :--- | :---: | :---: | :--- |
+| **`cafe`** | $20\,\text{m} \times 20\,\text{m}$ | 800 | Dense indoor café layout with tables, chairs, and perimeter walls. Primary benchmark arena. |
+| **`warehouse`** | $30\,\text{m} \times 20\,\text{m}$ | 9,375 | Expansive open warehouse with perimeter boundaries and isolated pallet stacks. |
+| **`depot`** | $25\,\text{m} \times 25\,\text{m}$ | 3,000 | Industrial logistics depot with parallel pallet-rack corridors and narrow aisles. |
+| **`office`** | $22\,\text{m} \times 22\,\text{m}$ | 3,500 | Compartmentalized office environment with interior cubicle walls and doorways. |
+| **`maze`** | $18\,\text{m} \times 18\,\text{m}$ | 4,800 | Constrained labyrinthian corridors testing deadlock recovery and tight turns. |
 
 ---
 
-## Installation & Setup
+## Robot Configuration
 
-### 1. Source ROS 2 Environment
-Make sure your ROS 2 Jazzy system is sourced:
+- **Platform**: TurtleBot3 Waffle differential-drive mobile robot.
+  - Track width / wheel base: $l = 0.287\,\text{m}$.
+  - Sensor-to-bumper radius: $r_{\text{bumper}} \approx 0.14\,\text{m}$.
+  - Sensor: 360° 2D LiDAR sub-sampled into 24 angular sectors (range $0.12\,\text{m}$ to $3.5\,\text{m}$).
+  - Control bounds: Linear velocity $v \in [-0.22, 0.22]\,\text{m/s}$, angular velocity $\omega \in [-1.0, 1.0]\,\text{rad/s}$.
+- **Swarm Sizes**: Supported and tested across $N \in \{2, 3, 5, 8\}$ robots.
+- **Spawn Protocol**: Robots are spawned along $y=0.0\,\text{m}$, $z=0.20\,\text{m}$ with initial yaw $-1.5708\,\text{rad}$ ($-\pi/2$). World $x$-offsets are fixed across all worlds:
+  $$\text{Offsets: } [0.0, -0.7, +0.7, -1.4, +1.4, -2.1, +2.1, -2.8]\,\text{m}\quad\text{for robots } 1 \dots 8$$
+
+---
+
+## Metrics
+
+### Discovered-Map Area Coverage Rate (D-ACR)
+Coverage is evaluated using the Discovered-Map Area Coverage Rate:
+$$\mathrm{D\text{-}ACR} = \frac{|\text{visited} \setminus \text{obstacle}|}{N_{\text{cells}} - |\text{obstacle}|} \times 100\%$$
+
+> [!IMPORTANT]
+> **D-ACR Denominator Caveat**:
+> D-ACR is a **discovered-map metric**, not a fixed-denominator physical coverage metric. The denominator excludes cells that have been actively registered as obstacles by LiDAR returns during the run. Consequently:
+> - Controllers that discover obstacles at different rates have different denominators.
+> - A controller that discovers few obstacles keeps a larger denominator (lowering its D-ACR).
+> - A controller that rapidly hugs walls shrinks its denominator early.
+> A ground-truth-denominator physical metric is not computed.
+
+### Proximity Event Counts
+- **Wall Proximity Event**: Registered when minimum LiDAR return is below $0.14\,\text{m}$ (bumper threshold proxy).
+- **Inter-Robot Proximity Event**: Registered when Euclidean distance between two robots is below $0.20\,\text{m}$ after step 15.
+- Both metrics are threshold-based sensor proxies, not verified physical contact forces.
+
+---
+
+## Safety Stack
+
+The shared safety stack executes on every control step to filter nominal command velocities $(v_{\text{nom}}, \omega_{\text{nom}})$:
+
+1. **Discrete Rule-Based Safeguards**:
+   - *ACAS Inter-Agent Override*: If any peer robot is within $0.20\,\text{m}$, command velocities are clamped to zero.
+   - *Front Obstacle Emergency Brake*: If frontal obstacles ($|\phi| \le 20^\circ$) are detected within $0.18\,\text{m}$, forward velocity is zeroed.
+2. **Soft-Slack QP Control Barrier Function (QP-CBF)**:
+   - Formulated as a Quadratic Program minimizing deviation from nominal commands plus a penalty on a slack relaxation variable $u_2$:
+     $$\min_{v, \omega, u_2} \left[ (v - v_{\text{nom}})^2 + 0.05(\omega - \omega_{\text{nom}})^2 + P_{\text{slack}} u_2^2 \right]$$
+     $$\text{subject to: } A_i v + B_i \omega + \gamma h_i + u_2 \ge 0, \quad u_2 \ge 0$$
+   - Enforces dual lookahead front/rear obstacle barriers ($d_{\text{safe}}^{\text{obs}} = 0.20\,\text{m}$) and inter-agent relative barriers ($d_{\text{safe}}^{\text{agent}} = 0.45\,\text{m}$) with $\gamma = 2.0$ and $P_{\text{slack}} = 500.0$.
+
+> [!CAUTION]
+> **No Formal Safety Guarantee**:
+> Because the QP includes a non-zero slack variable $u_2$ with finite penalty $P_{\text{slack}} = 500.0$ to guarantee solver feasibility in tight spaces, the safety barriers are **soft**. There is **NO formal mathematical safety guarantee**. In tight passages, the solver accepts temporary constraint violations rather than returning infeasible, resulting in observed minimum inter-agent clearances down to $0.26\,\text{m}$ (maze) and persistent wall grazing.
+
+---
+
+## MAPPO (Multi-Agent PPO)
+
+- **Architecture**: Centralized Training with Decentralized Execution (CTDE) implemented under Ray RLlib (ModelV2 API stack, PyTorch).
+- **Policy Model**: Shared Actor network (`[46] -> [128, 128] -> [4] (mean, log_std)`) and Centralized Critic network (`[46 * N] -> [256, 256] -> [1]`).
+- **Observation Space (46-dim)**: 24 LiDAR sector distance minimums, relative goal vector (distance and heading angle), linear and angular velocities, and relative states to up to 9 neighbors (padded).
+- **Archival Checkpoint**: Stored in `checkpoints/mappo_baseline/` (trained for 45 iterations on the `cafe` environment).
+- **Evaluation & Statistical Limitations**:
+  - The MAPPO evaluation results reported in the repository reflect specific experimental protocols:
+    - *Protocol A* (`cafe` only): 10 episodes per condition, 150 steps/ep.
+    - *Protocol B* (Cross-world): Single-seed probe ($n=1$) per condition across 5 worlds.
+    - *Protocol C* (Reward ablation): $n=3$ seeds per condition.
+  - These results demonstrate a low-displacement penalty-avoidance failure mode under the evaluated reward structure; they do **not** constitute a statistically representative benchmark across hyperparameter sweeps or diverse MARL algorithms.
+
+---
+
+## Reproducibility
+
+### 1. Requirements & System Dependencies
+- OS: Ubuntu 24.04 LTS (Host) or Ubuntu 22.04 LTS (Container)
+- ROS 2: Jazzy Jalisco (`desktop` install)
+- Simulator: Gazebo Sim Harmonic
+- Python: 3.10 or 3.12 with pinned dependencies in `requirements.txt`
+- PyTorch & Ray RLlib: PyTorch 2.12.0+, Ray 2.55.1
+
+### 2. Environment Setup
 ```bash
+# Source ROS 2 Jazzy
 source /opt/ros/jazzy/setup.bash
-```
 
-### 2. Install Workspace Dependencies
-Ensure all workspace packages are built:
-```bash
+# Clone and navigate to repository
+cd /path/to/MARS
+
+# Build workspace packages
 colcon build --symlink-install
 source install/setup.bash
+
+# Export required runtime environment variables
+export TORCHDYNAMO_DISABLE=1
+export TORCH_COMPILE_DISABLE=1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 ```
 
----
-
-## How to Run (Unified Command Runner)
-
-We provide a unified launcher script `run_swarm.sh` to automate workspace sourcing, package building, simulation execution, and telemetry export.
-
-### 1. Autonomous Area Coverage Demo (Frontier Heuristic + CBF, GUI)
-Runs the swarm exploring any world (`cafe`, `warehouse`, `depot`, `office`, `maze`) using the decentralized frontier heuristic (A* + CBF + Behavior Tree) for a configurable step budget (default 1200 steps), automatically exporting a publication-grade coverage heatmap PNG:
+### 3. Run Rapid Reproduction Smoke Test (<10 seconds)
+Verify library dependencies, world files, MAPPO checkpoint loading, and core unit tests in a single headless command:
 ```bash
-# Default 3-robot run in cafe world with Gazebo GUI + RViz
-./run_swarm.sh --coverage-demo
-
-# Multi-world or heterogeneous robot swarm (Waffle + Pioneer 2DX)
-./run_swarm.sh --coverage-demo 1200 --world depot --robots 5 --heatmap docs/heatmaps/depot_heatmap.png
-./run_swarm.sh --coverage-demo 300 --world cafe --robots 2 --types "waffle,pioneer2dx"
+./scripts/smoke_test.sh
 ```
 
-### 2. Swarm Scalability Sweep Across Robot Counts & Worlds
-Runs automated, headless scalability sweeps across varying swarm sizes ($N \in \{2, 3, 5, 8\}$) in isolated subprocesses with automatic result caching:
+### 4. Run Full Regression Test Suite (56 Tests)
 ```bash
-# Sweep robot counts on a specific world
-./run_swarm.sh --sweep-robots --world depot --steps 300 --counts "2 3 5 8"
-
-# Grand sweep across all 5 benchmark worlds
-./run_swarm.sh --sweep-robots --world all --steps 200 --counts "2 3 5 8"
+./run_swarm.sh --test
+# Or directly via pytest:
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/ -v
 ```
 
-### 3. Quantitative Baseline Benchmarking Suite
-To benchmark exploration performance across control baselines (Random Walk, Frontier Heuristic, and the deprecated MAPPO policy):
+### 5. Run Classical Frontier Coverage Demo
 ```bash
-# Benchmark control baselines (Random Walk & Frontier Heuristic)
+# Headless run in cafe world (1200 steps)
+./run_swarm.sh --coverage-demo 1200 --world cafe --headless
+
+# GUI rollout in warehouse with 3 robots
+./run_swarm.sh --coverage-demo 1200 --world warehouse
+```
+
+### 6. Run Baseline Benchmark Comparison (Frontier vs. Random Walk vs. MAPPO)
+```bash
+# Evaluate Random Walk and Frontier Heuristic on cafe (150 steps)
 ./run_swarm.sh --benchmark --world cafe
 
-# Benchmark all controllers including MAPPO checkpoint
-./run_swarm.sh --benchmark ./checkpoints --world cafe
+# Evaluate all controllers including pre-trained MAPPO checkpoint
+./run_swarm.sh --benchmark ./checkpoints/mappo_baseline --world cafe
 ```
 
-### 4. Swarm Resilience & Fault-Tolerant Failure Injection
-To evaluate the swarm's self-healing adaptation when a robot experiences sudden hardware failure:
+### 7. Render High-Resolution Coverage Heatmaps
 ```bash
-./run_swarm.sh --resilience ./checkpoints
-```
-*Triggers the `robot_killer` failure injection node after 18 seconds. Surviving robots dynamically re-partition remaining frontiers to maintain coverage.*
-
-### 5. Dynamic Obstacle CBF Verification (Non-Static Hazard Avoidance)
-Verifies that the Quadratic Programming Control Barrier Function (CBF) holds strict collision-free guarantees against moving dynamic hazards in Gazebo:
-```bash
-# Test head-on moving hazard approach (active braking & buffer preservation)
-./run_swarm.sh --dynamic-test --scenario head_on --world cafe
-
-# Test orthogonal crossing hazard (yielding until corridor clears)
-./run_swarm.sh --dynamic-test --scenario crossing --world cafe
-
-# Run with Gazebo 3D GUI enabled
-./run_swarm.sh --dynamic-test --scenario head_on --world cafe --gui
-```
-
-### 6. Coverage-Heatmap Renderer (Phase 2 Verification & Phase 3 Visuals)
-Transforms raw `visited_grid` numpy arrays, companion `.npz` run archives, or JSON telemetry files into publication-grade colored PNG visuals with trajectory paths and visit intensity gradients:
-```bash
-# Render coverage heatmap from saved .npz run data or json telemetry
 ./run_swarm.sh --render-heatmap docs/heatmaps/warehouse_demo_heatmap.npz --out docs/heatmaps/my_heatmap.png
-
-# Generate a high-resolution visit intensity density heatmap for any world
-./run_swarm.sh --render-heatmap --world warehouse --demo --density
-
-# Standalone CLI execution
-python3 src/mars_swarm/mars_swarm/coverage_heatmap_renderer.py --input path/to/run.npz --output path/to/out.png --dpi 300
-```
-
-### 7. Deprecated Baseline: MAPPO Training & Evaluation (Academic Negative Result)
-> [!NOTE]
-> Preserved strictly for academic baseline reproduction. MAPPO suffers from penalty-induced freezing in dense obstacle environments.
-```bash
-# Train MAPPO policy with Ray RLlib and PyTorch (headless)
-./run_swarm.sh --train
-
-# Evaluate trained checkpoint (headless or Gazebo GUI)
-./run_swarm.sh --evaluate ./checkpoints
-./run_swarm.sh --play ./checkpoints
 ```
 
 ---
 
-## Observation Space Details (46-Dim Vector)
-Each robot receives a state observation vector containing:
-- **`[0 - 23]`:** Minimum range sub-sampled across 24 Lidar sectors.
-- **`[24 - 25]`:** Relative Goal distance and orientation angle.
-- **`[26 - 27]`:** Linear and angular command velocities.
-- **`[28 - 45]`:** Neighbor relative states (relative distances and angles to up to 9 neighbors, padded with default values `[10.0, 0.0]`).
+## Expected Results
 
----
+The following values represent archived research results reported across project manuscripts and JSON manifests.
 
-## Benchmarking Results & Final Project Synthesis
+### 1. Protocol A: Café Distributional Comparison (10 Episodes, 150 Steps, $N=3$)
+*From Paper 1 (`papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf`)*:
 
-| Controller / Scenario | Median ACR (%) | Mean ACR (%) | Overlap Redundancy | Swarm Distance (m) | Collisions / Episode |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Frontier Heuristic (A\* + BT)** | **38.6%** | $35.2 \pm 14.2\%$ | **16.77** | 5.4 m | 2.20 (0 agent, 2.20 wall) |
-| **Random Walk** | **29.6%** | $31.4 \pm 4.5\%$ | 34.38 | 7.4 m | 0.80 (0 agent, 0.80 wall) |
-| **MAPPO (Nominal, 45 iters)** | **14.5%** | $14.0 \pm 0.9\%$ | 43.91 | 1.5 m | 2.00 (0 agent, 2.00 wall) |
-| **MAPPO (Sensor Noise)** | **12.0%** | $11.6 \pm 2.4\%$ | 23.55 | 1.8 m | 2.60 (0 agent, 2.60 wall) |
-| **MAPPO (Agent Failure)** | **9.3%** | $9.9 \pm 0.9\%$ | 9.08 | 0.9 m | 3.00 (0 agent, 3.00 wall) |
+| Controller / Scenario | Median D-ACR (%) | Mean D-ACR (%) | Redundancy | Swarm Dist. (m) | Wall Collisions | Agent Collisions |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Frontier Heuristic (A\* + BT)** | **38.6%** | $35.2 \pm 14.2\%$ | **16.77** | 5.4 m | 2.20 | 0.00 |
+| **Random Walk** | **29.6%** | $31.4 \pm 4.5\%$ | 34.38 | 7.4 m | 0.80 | 0.00 |
+| **MAPPO (Nominal, 45 iters)** | **14.5%** | $14.0 \pm 0.9\%$ | 43.91 | 1.5 m | 2.00 | 0.00 |
+| **MAPPO (Sensor Noise)** | **12.0%** | $11.6 \pm 2.4\%$ | 23.55 | 1.8 m | 2.60 | 0.00 |
+| **MAPPO (Agent Failure)** | **9.3%** | $9.9 \pm 0.9\%$ | 9.08 | 0.9 m | 3.00 | 0.00 |
 
-> [!WARNING]
-> **Formal Architectural Decision: MARL / MAPPO Deprecation & Closure**
-> As empirically established across 50 rigorous benchmarking trials, the Multi-Agent PPO (MAPPO) policy exhibits penalty-induced policy freezing in complex obstacle environments, achieving only **14.5%** median ACR compared to **38.6%** for the Frontier Heuristic and **29.6%** for pure Random Walk. Strong negative penalties for collisions combined with sparse discovery rewards cause value gradient collapse, driving agents into hyper-conservative stationary hovering (overlap redundancy of $43.91$ vs $16.77$). 
-> 
-> **Decision**: MAPPO is formally deprecated for multi-robot obstacle exploration in this project. The trained weights and training scripts remain committed for academic reproducibility and negative-result verification, but all active exploration, multi-robot scalability sweeps, and multi-world benchmarks officially standardize on the decentralized **Frontier Heuristic (A* + CBF + Dynamic Voronoi)** controller.
+*Status: 10-episode reference distribution. MAPPO experiences low-displacement freezing due to dense collision penalties.*
 
-> **Final Project Report:** In rigorous multi-robot coverage benchmarking across Gazebo simulation environments, the classical Frontier Heuristic achieved a verified **100.0%** final Area Coverage Rate (ACR) in the obstacle-free warehouse world at step 8,500 ([`checkpoints/run_summary.json`](checkpoints/run_summary.json)) and **100.0%** in the cafe world in a later 1,200-step run (`checkpoints/cafe_extended_summary.json`; an earlier 56.0% figure from a 12,000-step run was superseded and is not reproduced), consistent with the warehouse ceiling being step-limited rather than capability-limited. Across a 50-episode quantitative comparison (10 episodes per condition, 150 steps/ep in the cafe world), the Frontier Heuristic significantly outperformed learned MARL, delivering a median ACR of **38.6%** (mean $35.2 \pm 14.2\%$, distance $5.4\text{ m}$) compared to **14.5%** for MAPPO Nominal ($14.0 \pm 0.9\%$, distance $1.5\text{ m}$), **12.0%** under Gaussian sensor noise, and **9.3%** under single-agent failure—lagging even Random Walk (**29.6%** median ACR, $7.4\text{ m}$ distance). MAPPO underperformed because dense collision penalties drove the policy into a hyper-conservative local optimum where agents hovered in place to avoid penalties (resulting in an overlap redundancy of $43.91$ vs. $16.77$ for the heuristic). Safety enforcement succeeded in eliminating agent-agent collisions (**0.00** across all 50 benchmarking episodes via Control Barrier Functions), but static wall collisions persisted at **1.0–2.5** grazing contacts per episode (and 17,018 sensor hits over 9,050 warehouse steps), documenting key system limitations: MARL requires exploratory trajectory shaping to escape penalty-aversion freezing, full warehouse coverage demands a minimum budget of $\ge 10,000$ steps, and zero wall-contact rates require proactive CBF repelling margins along continuous perimeter boundaries.
+### 2. Protocol B: Single-Episode Cross-World Matrix ($n=1$, 150 Steps, $N=3$)
+*From Paper 5 and `checkpoints/mappo_multiworld_comparison.json`*:
 
----
+| World | Classical Frontier D-ACR | Random Walk D-ACR | MAPPO Nominal D-ACR |
+| :--- | :---: | :---: | :---: |
+| `cafe` | 57.0% | 32.8% | 28.2% |
+| `warehouse` | 4.34% | 3.52% | 3.31% |
+| `depot` | 13.28% | 9.40% | 6.69% |
+| `office` | 3.80% | 2.87% | 2.95% |
+| `maze` | 2.73% | 2.45% | 2.17% |
 
-## Cross-Environment MAPPO Result (5-World Validation)
+*Status: Exploratory single-run baselines illustrating relative controller performance across varying arena topologies.*
 
-> **Note on protocols:** the numbers above (38.6% / 14.5% / 29.6%) come from a **10-episode-per-condition** evaluation on `cafe` only ("Protocol A"). The table below comes from a **separate, single-seed** run across all 5 worlds ("Protocol B", $n{=}1$ per condition). These are two different evaluation runs with different sample sizes — do not treat the ratios between them as directly comparable; each independently shows the heuristic beating MAPPO, which is the point, but the exact margins differ by protocol.
+### 3. Long-Run Classical Controller Reference Runs (Single Runs, $N=3$)
+*From Paper 5 and archived summary manifests*:
 
-The single-world result above was subsequently validated across all 5 benchmark environments (25-run matrix: 5 worlds × 5 controller/scenario conditions, $N{=}3$, fixed seed, 150-step episodes). The Frontier Heuristic outperformed the trained MAPPO policy in **every environment tested**, confirming the negative result is a structural property of the reward design, not an artifact of one map:
+| World | Total Cells | Step Budget | Final D-ACR | Plateau Step | Swarm Dist. (m) | Wall Prox. | Agent Prox. | Min Clr. (m) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `warehouse` | 9,375 | 9,050 | 100.0% | 7,660 | 1263 m | 17,018 | 0 | 0.81 m |
+| `office` | 3,500 | 3,500 | 98.2% | 3,466 | 377 m | 0 | 0 | 0.38 m |
+| `depot` | 3,000 | 3,500 | 85.7% | 2,906 | 180 m | 477 | 0 | 0.55 m |
+| `cafe` | 800 | 1,200 | 100.0% | 397 | 82 m | 738 | 0 | 0.46 m |
+| `maze` | 4,800 | 4,000 | 25.0% | 3,961 | 316 m | 1,108 | 0 | 0.26 m |
 
-| World | Frontier Heuristic ACR | MAPPO (Nominal) ACR |
-| :--- | :---: | :---: |
-| `cafe` | 57.0% | 28.2% |
-| `warehouse` | 4.34% | 3.31% |
-| `depot` | 13.28% | 6.69% |
-| `office` | 3.80% | 2.95% |
-| `maze` | 2.73% | 2.17% |
-
-Full breakdown (including Random Walk, sensor-noise, and agent-failure conditions per world) in [`docs/BENCHMARK_WORLDS.md`](docs/BENCHMARK_WORLDS.md) Section 10 and the raw data in [`checkpoints/mappo_multiworld_comparison.json`](checkpoints/mappo_multiworld_comparison.json).
-
----
-
-## Benchmark Environments & Fuel Worlds Expansion
-
-For detailed physical parameters, single-threaded deterministic ODE physics specifications, 1,200-step comparisons, and extended ceiling runs across all 5 supported environments (`cafe`, `warehouse`, `depot`, `office`, `maze`), see:
-- [**Benchmark Worlds & Fuel Environments Report**](docs/BENCHMARK_WORLDS.md)
-
----
-
-## Reproducing Paper Results
-
-The repository includes all environments, configurations, pre-trained weights, and evaluation manifests described in *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"*:
-
-### 1. Protocol A: Café Distributional Comparison (50 Episodes)
-Evaluates 10 episodes each across Frontier Heuristic, Random Walk, MAPPO Nominal, MAPPO Sensor Noise, and MAPPO Agent Failure:
-```bash
-# Sourcing environment
-source /opt/ros/jazzy/setup.bash && source install/setup.bash
-
-# Run quantitative benchmark across all baselines
-./run_swarm.sh --benchmark ./checkpoints --world cafe
-```
-Outputs are written to `checkpoints/run_summary.json` and plotted in `checkpoints/benchmark_results.png`.
-
-### 2. Protocol B: Cross-World Generalization ($5 \times 5$ Evaluation Matrix)
-Runs single-episode benchmark probes across `cafe`, `warehouse`, `depot`, `office`, and `maze`:
-```bash
-python3 src/mars_swarm/mars_swarm/benchmark_mappo_multiworld.py
-```
-Outputs are recorded in [`checkpoints/mappo_multiworld_comparison.json`](checkpoints/mappo_multiworld_comparison.json).
-
-### 3. Protocol C: Controlled Multi-Seed Reward Ablation
-Inspect the 25 raw ablation evaluation manifests and the corrected statistical analysis:
-```bash
-# View corrected statistical analysis (paired t-test across n=3 seeds)
-cat checkpoints/ablation_results/corrected_statistical_analysis.json
-
-# Run unit and integration tests
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/
-```
+*Status: Descriptive single-run reference values documenting late-stage D-ACR stabilization.*
 
 ---
 
 ## Research Outputs
 
-This project's results are written up as 5 self-contained research papers and 10 LinkedIn posts:
+The MARS project has produced three manuscripts submitted to SSRN:
 
-- [**`papers/`**](papers/) — 5 papers (source + compiled PDF + figures), SSRN/arXiv/conference-ready. See [`papers/README.md`](papers/README.md) for the index and headline findings per paper.
-- [**`papers/paper1_negative_result_mappo/`**](papers/paper1_negative_result_mappo/) — Primary preprint: *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"* ([PDF](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)). Submitted to SSRN on 2026-10-03 (abstract ID [7556699](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699), under review).
-- [**`posts/`**](posts/) — 10 LinkedIn posts with copy and figures. See [`posts/README.md`](posts/README.md).
+1. **Testbed & Architecture Paper**:  
+   *"MARS: A Safety-Filtered Multi-Robot Area-Coverage Testbed with Classical, Random-Walk and MAPPO Controllers"* (Pandhe, 2026).  
+   SSRN Submission ID: [7567362](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7567362) (Under Review) | [Compiled PDF](papers/paper5_safe_scalable_architecture/main.pdf)
+2. **MAPPO Low-Displacement Failure Mode Paper**:  
+   *"Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage"* (Pandhe, 2026).  
+   SSRN Submission ID: [7556699](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699) (Approved) | [Compiled PDF](papers/paper1_negative_result_mappo/topic4_heuristic_beats_marl.pdf)
+3. **Entropy-Collapse Reproducibility Companion**:  
+   *"A Failed Diagnosis of Entropy Collapse in Small-Budget MAPPO for Multi-Robot Area Coverage"* (Pandhe, 2026).  
+   SSRN Submission ID: [7567220](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7567220) (Under Review) | [Compiled PDF](papers/paper2_sample_efficient_mappo/topic1_sample_efficient_mappo.pdf)
+
+All LaTeX sources, figures, and compiled PDFs are located in [`papers/`](papers/).
+
+---
+
+## Data / Artifacts
+
+- Master verification table: [`docs/BENCHMARK_WORLDS.md`](docs/BENCHMARK_WORLDS.md)
+- Complete artifact accounting: [`ARTIFACT_MANIFEST.md`](ARTIFACT_MANIFEST.md)
+- Persistent Zenodo Archive: [10.5281/zenodo.22758286](https://doi.org/10.5281/zenodo.22758286)
+- Checkpoints & Evaluation Manifests:
+  - `checkpoints/mappo_baseline/`: Ray RLlib MAPPO checkpoint
+  - `checkpoints/paper2_ab/`: Controlled A/B training logs
+  - `checkpoints/run_summary.json`: Warehouse ceiling run
+  - `checkpoints/mappo_multiworld_comparison.json`: 25-condition cross-world matrix
+  - `checkpoints/sweep_scaling_results.json`: Robot count scaling sweep results
+
+---
+
+## Known Limitations
+
+This research artifact operates under the following documented constraints:
+1. **Discovered-Map D-ACR**: The metric denominator varies across controllers based on discovered obstacle cells; it does not measure coverage against a fixed ground-truth physical area.
+2. **Soft Safety Bounds**: The QP-CBF filter uses soft-slack relaxation ($P_{\text{slack}} = 500.0$); no formal collision-prevention guarantee exists, and wall-grazing contacts occur.
+3. **Evaluation Nondeterminism**: Asynchronous ROS-Gazebo bridge communication and OS thread scheduling introduce run-to-run timing variance.
+4. **No Cross-Swarm MAPPO Transfer**: The MAPPO policy was trained strictly at $N=3$ in the `cafe` world; zero-shot transfer across team sizes was not evaluated.
+5. **Missing Component Ablations**: Full architectural ablations of the classical coordinator (e.g. removing Voronoi partitioning or CBAA consensus independently) were not systematically benchmarked.
+6. **Simulation-Only Scope**: The framework is validated purely in Gazebo simulation; no physical hardware transfer was performed.
+7. **Single Primary Robot Model**: Primary benchmarking standardizes on the TurtleBot3 Waffle (with preliminary Pioneer 2DX model support).
+8. **Small Environment-Step Training Budget**: Training was conducted on thousands of environment steps (due to physics-in-the-loop overhead) rather than millions of steps common in abstracted MARL research.
+9. **Archival Gaps**: The raw telemetry from the initial exploratory entropy collapse run and two one-off hazard tests was unarchived; these have been superseded by controlled reproducible tests.
 
 ---
 
 ## Citation
 
-If you use this codebase, simulation environments, trained policies, or benchmark results in your research, please cite:
+If you use MARS in your research, please cite:
 
 ```bibtex
-@article{pandhe2026mappo_failure,
-  title   = {Diagnosing a Low-Displacement Failure Mode in {MAPPO} for Multi-Robot Area Coverage},
+@article{pandhe2026mars,
+  title   = {MARS: A Safety-Filtered Multi-Robot Area-Coverage Testbed with Classical, Random-Walk and MAPPO Controllers},
   author  = {Pandhe, Harsh},
+  journal = {SSRN Electronic Journal},
   year    = {2026},
-  journal = {arXiv preprint},
   doi     = {10.5281/zenodo.22758286},
-  url     = {https://github.com/harsh-pandhe/MARS}
+  url     = {https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7567362}
+}
+
+@article{pandhe2026mappo_failure,
+  title   = {Diagnosing a Low-Displacement Failure Mode in MAPPO for Multi-Robot Area Coverage},
+  author  = {Pandhe, Harsh},
+  journal = {SSRN Electronic Journal},
+  year    = {2026},
+  doi     = {10.5281/zenodo.22758286},
+  url     = {https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7556699}
 }
 ```
 
@@ -284,3 +353,16 @@ If you use this codebase, simulation environments, trained policies, or benchmar
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+---
+
+## AI Disclosure
+
+Generative AI tools, including Anthropic's Claude, were used during project development and manuscript preparation for code and analysis-script assistance, language editing, structural critique and identification of potential methodological or statistical issues. The author reviewed and verified the results against the archived data and is solely responsible for the methodology, experiments, analysis and conclusions.
+
+---
+
+## Status
+
+**Project State**: **v1.0.0 (Research Artifact Frozen)**.  
+The v1.0.0 release defines the frozen research artifact; future development should occur in subsequent releases rather than modifying the published research baseline. The current codebase, simulation assets, pre-trained weights, and evaluation manifests represent the reference release for the cited manuscripts. No further feature development, reward retraining, or experimental changes will be made to this release branch.

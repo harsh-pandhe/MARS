@@ -6,7 +6,7 @@ package_name = 'mars_swarm'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='1.0.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -24,9 +24,9 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='harsh-pandhe',
-    maintainer_email='harsh-pandhe@example.com',
-    description='MARL Swarm Robotics in ROS 2 and Gazebo',
+    maintainer='Harsh Pandhe',
+    maintainer_email='harshpandhehome@gmail.com',
+    description='MARS: Multi-Agent Robot Swarm Navigation, Area Coverage, and MAPPO Benchmark Suite',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={

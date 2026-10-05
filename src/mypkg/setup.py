@@ -6,7 +6,7 @@ package_name = 'mypkg'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='1.0.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -45,10 +45,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='nandakishore',
-    maintainer_email='nandakishore@todo.todo',
-    description='Coffee-shop Nav2 robot — SLAM mapping + autonomous navigation',
-    license='TODO: License declaration',
+    maintainer='Harsh Pandhe',
+    maintainer_email='harshpandhehome@gmail.com',
+    description='MARS support package for SLAM and autonomous navigation',
+    license='Apache-2.0',
     extras_require={
         'test': ['pytest'],
     },
