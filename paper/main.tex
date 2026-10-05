@@ -188,11 +188,11 @@ train batch 700, $90$-step episodes, minibatch 64, 5 epochs, learning rate
 $10^{-4}$, clip 0.2, $\gamma=0.99$, GAE $\lambda=0.95$ and entropy
 coefficient $0.01$. The per-step reward is
 \begin{multline}
-r_i=-0.01+5.0\,\Delta d_i+4.0\,n_{\text{new}}+20\,\mathbf{1}[\text{goal}]\\
--8.0\,\mathbf{1}[\text{wall}]-\rho_i,
+r_i=-0.01+5.0\,\Delta d_i+4.0\,n_{\text{new}}+20\,\mathbb{I}[\text{goal}]\\
+-8.0\,\mathbb{I}[\text{wall}]-\rho_i,
 \end{multline}
 where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ the number
-of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbf{1}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbf{1}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
+of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbb{I}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbb{I}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
 point from a fixed per-world list of safe positions, reassigned on arrival; it
 is less informed than the classical controller's map-aware frontier targets. The policy is purely reactive: it has no recurrent state or local map, and no spatial-memory variant was trained.
 Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
