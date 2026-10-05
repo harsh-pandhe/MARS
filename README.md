@@ -45,30 +45,30 @@ MARS was developed as a comparative, reproducibility-oriented research testbed t
 
 ```mermaid
 graph TD
-    subgraph Decision & Planning Layer
-        C[Classical Controller<br/>Dynamic Voronoi + CBAA + A* + BT]
-        R[Random-Walk Baseline<br/>Stochastic Heading]
-        M[MAPPO Baseline<br/>Ray RLlib Centralized Critic]
+    subgraph "Decision & Planning Layer"
+        C["Classical Controller<br/>Dynamic Voronoi + CBAA + A* + BT"]
+        R["Random-Walk Baseline<br/>Stochastic Heading"]
+        M["MAPPO Baseline<br/>Ray RLlib Centralized Critic"]
     end
 
-    subgraph Shared Safety Filter
-        SW[Controller Switch]
-        OR[Discrete Overrides<br/>ACAS Inter-Agent Brake + Front E-Stop]
-        CBF[Soft-Slack OSQP QP-CBF<br/>d_safe_obs=0.20m, d_safe_agent=0.45m]
+    subgraph "Shared Safety Filter"
+        SW["Controller Switch"]
+        OR["Discrete Overrides<br/>ACAS Inter-Agent Brake + Front E-Stop"]
+        CBF["Soft-Slack OSQP QP-CBF<br/>d_safe_obs=0.20m, d_safe_agent=0.45m"]
     end
 
-    subgraph Simulation Platform
-        GZ[Gazebo Harmonic Sim<br/>Single-Threaded ODE, Seed 42]
-        BR[ros_gz_bridge / ROS 2 Jazzy]
+    subgraph "Simulation Platform"
+        GZ["Gazebo Harmonic Sim<br/>Single-Threaded ODE, Seed 42"]
+        BR["ros_gz_bridge / ROS 2 Jazzy"]
     end
 
-    subgraph Physical Swarm World
-        W[Multi-Robot Arena<br/>TurtleBot3 Waffle N in {2, 3, 5, 8}]
+    subgraph "Physical Swarm World"
+        W["Multi-Robot Arena<br/>TurtleBot3 Waffle (N in 2, 3, 5, 8)"]
     end
 
-    subgraph Evaluation & Telemetry
-        DACR[D-ACR Coverage Metric<br/>Discovered-Map Denominator]
-        TEL[Telemetry Engine<br/>run_summary.json + Heatmaps]
+    subgraph "Evaluation & Telemetry"
+        DACR["D-ACR Coverage Metric<br/>Discovered-Map Denominator"]
+        TEL["Telemetry Engine<br/>run_summary.json + Heatmaps"]
     end
 
     C --> SW
