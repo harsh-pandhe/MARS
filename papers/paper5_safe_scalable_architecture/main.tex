@@ -118,7 +118,7 @@ where ``obstacle'' cells are those the robots have registered as obstacles, so
 the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
 counted when the minimum LiDAR range is below $0.14\,\si{m}$ (the approximate
 sensor-to-bumper distance); an \emph{inter-robot proximity event} when two robots are closer
-than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
+than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. Robots start from fixed spawn positions on a line 0.7\,m apart (offsets $0,-0.7,+0.7,-1.4,\dots$\,m along one axis from the world's spawn point), identical in every episode. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
 smaller than the filter's separation buffer (Sec.~\ref{sec:safety}), so a zero count
 does not show that the margin held.
 
@@ -172,7 +172,7 @@ stack has these components:
 \end{itemize}
 
 \subsection{Random-Walk Controller}
-At each step every robot's command is drawn uniformly from the action box $[-0.22,0.22]\times[-1.0,1.0]$ (the environment's \texttt{action\_space.sample()}), independently per robot and step, with no observation or goal information, and then passes through the same three-stage safety stack. The Gazebo seed is fixed (42); no separate seed for the action sampler is recorded.
+At each step every robot's command is drawn uniformly from the action box $[-0.22,0.22]\times[-1.0,1.0]$ (the environment's \texttt{action\_space.sample()}), independently per robot and step, with no observation or goal information, and then passes through the same three-stage safety stack. The Gazebo seed is fixed (42); the action sampler's RNG state was not retained, so Random-Walk results are one stochastic realization rather than a reproducible seeded baseline. It is included as a minimally informed behavioral baseline, not an information-matched one.
 
 \subsection{MAPPO Baseline}
 A single policy is shared by all robots. Each neighbor's (distance, bearing)
@@ -195,7 +195,7 @@ where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ the numbe
 of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbf{1}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbf{1}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
 point from a fixed per-world list of safe positions, reassigned on arrival; it
 is less informed than the classical controller's map-aware frontier targets. The policy is purely reactive: it has no recurrent state or local map, and no spatial-memory variant was trained.
-Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is identified by the SHA-256 of its policy state, \texttt{f07518b9\dots ab6edb}. 
+Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
 
 %==============================================================================
 \section{Results}
@@ -216,7 +216,7 @@ comparison.
 
 \begin{table}[t]
 \centering
-\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; clearance is the minimum inter-robot distance.}
+\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; clearance is the minimum inter-robot distance. Steps are environment control steps; Dist.\ is cumulative path length summed over robots.}
 \label{tab:ceil}
 \footnotesize
 \setlength{\tabcolsep}{2.6pt}
@@ -337,7 +337,7 @@ run once each without a proximity event; their raw traces are not archived.
 %==============================================================================
 MARS provides a documented testbed with archived code and per-run results. In the
 reported long reference runs the classical controller's discovered-map ACR
-was high in four of five worlds, coverage generally grew with
+was high in four of five worlds, observed discovered-map ACR generally increased with
 team size in the exploratory sweep, and in the single-episode matrix the
 observed MAPPO discovered-map ACR was lower than the classical controller's in all five
 worlds. These results are descriptive: evaluation is not deterministic, the
@@ -345,9 +345,9 @@ learned and classical controllers differ in information and design, the safety
 margin is soft, and several architectural claims remain untested. We release
 the code, per-run logs and scripts so that others can check and extend them.
 
-\paragraph*{Environment.} ROS\,2 Jazzy, Gazebo Harmonic, Ubuntu 24.04.5 LTS, AMD Ryzen~5 7600 (6 cores, 12 threads), about 30\,GB RAM, Ray RLlib 2.55.1 (PyTorch, ModelV2 API stack), OSQP, PettingZoo parallel API; Gazebo seed 42.
+\paragraph*{Environment.} ROS\,2 Jazzy, Gazebo Harmonic, Ubuntu 24.04.5 LTS, AMD Ryzen~5 7600 (6 cores, 12 threads), about 30\,GB RAM, Ray RLlib 2.55.1 (PyTorch, ModelV2 API stack), OSQP, PettingZoo parallel API; Gazebo seed 42; in the cafe world the physics step is 1\,ms at a real-time factor of 1. Licence: Apache-2.0.
 
-\paragraph*{AI assistance disclosure.} AI tools (Anthropic's Claude) were used during the project for code and analysis-script assistance and for language editing and structural critique of this manuscript. The author reviewed and verified the results against the archived data and is solely responsible for the methodology, experiments, analysis and conclusions.
+\paragraph*{AI assistance disclosure.} Generative AI tools, including Anthropic's Claude, were used during project development and manuscript preparation for code and analysis-script assistance, language editing, structural critique and identification of potential methodological or statistical issues. The author reviewed and verified the results against the archived data and is solely responsible for the methodology, experiments, analysis and conclusions.
 
 \paragraph*{Data availability.} Code, per-run results and scripts are in the
 project repository, archived at \url{https://doi.org/10.5281/zenodo.22758286}
