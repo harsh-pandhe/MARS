@@ -37,13 +37,13 @@ cooperative area coverage by a small team of differential-drive robots. It puts
 three controllers behind one three-stage safety stack (two fixed override
 rules, a soft control-barrier-function filter, and a front safeguard): a
 classical decentralized planner (frontier selection, A* routing, Voronoi
-partitioning with consensus-based auction claims within a $3\,\si{m}$ radio
+partitioning with consensus-based auction claims within a $3\,\si{m}$ communication
 range, and a behavior tree), a random walk, and a MAPPO policy with a
 permutation-invariant neighbor encoder and a centralized critic, across five
 Gazebo worlds. In long single reference runs the classical planner reached
-high coverage of the discovered non-obstacle cells (85.7--100\% in four worlds, 25.0\% in the maze),
+high discovered-map ACR (85.7--100\% in four worlds, 25.0\% in the maze),
 and in an exploratory single-episode matrix a trained MAPPO checkpoint had
-lower observed coverage than the classical planner in all five worlds; the
+lower observed discovered-map ACR than the classical planner in all five worlds; the
 comparison is between an engineered system and a minimally trained reactive
 policy, not a matched-information benchmark. We also document three limits of the testbed: evaluation of an identical checkpoint
 varies between runs (a documented property that users must account for),
@@ -79,8 +79,7 @@ same safety stack, and archives per-run results.
         soft safety margin, and claims that remain untested
         (Sec.~\ref{sec:limits}).
 \end{itemize}
-We make no claim that the learned policy is competitive, that the safety filter
-gives a formal guarantee, or that the policy transfers to other team sizes.
+We present the baselines as a starting point, not as state-of-the-art ceilings, and leave open for users the questions of competitive learned policies, a safety filter with a formal guarantee, and transfer across team sizes.
 
 %==============================================================================
 \section{Related Work}
@@ -108,7 +107,7 @@ companion study~\cite{pandhe2026mappo} examines the MAPPO baseline in depth.
 Three TurtleBot3 Waffle robots (differential drive, 24-sector LiDAR, odometry)
 run in Gazebo Harmonic under ROS\,2 Jazzy~\cite{macenski2022ros2,gazebo}. The
 simulator is wrapped as a PettingZoo~\cite{terry2021pettingzoo} parallel
-environment. The workspace is a grid of $0.4\,\si{m}$ cells. A cell is marked
+environment, so any code that speaks the standard multi-agent parallel API can drive the simulator without touching ROS\,2 internals; our own training uses it through RLlib. The workspace is a grid of $0.4\,\si{m}$ cells. A cell is marked
 visited when a robot's pose falls in it or a LiDAR ray (up to $2.0\,\si{m}$)
 passes through it as free space. The \emph{area-coverage rate} is
 \begin{equation}
@@ -116,10 +115,10 @@ passes through it as free space. The \emph{area-coverage rate} is
 {N_{\text{cells}}-|\text{obstacle}|}\times100,
 \end{equation}
 where ``obstacle'' cells are those the robots have registered as obstacles, so
-the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall contact} is
+the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
 counted when the minimum LiDAR range is below $0.14\,\si{m}$ (the approximate
-sensor-to-bumper distance); an \emph{agent contact} when two robots are closer
-than $0.20\,\si{m}$ after the first 15 steps. The agent-contact threshold is
+sensor-to-bumper distance); an \emph{inter-robot proximity event} when two robots are closer
+than $0.20\,\si{m}$ after the first 15 steps. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
 smaller than the filter's separation buffer (Sec.~\ref{sec:safety}), so a zero count
 does not show that the margin held.
 
@@ -149,7 +148,7 @@ the neighbor's velocity as bounded and unmodeled. If the QP is infeasible the
 filter returns $(\min(0,v_{\text{nom}}),\omega_{\text{nom}})$.
 \emph{(3) Front safeguard.} Forward speed is set to $\min(0,v)$ if any of the
 five forward-cone beams reads below $0.24\,\si{m}$.
-The slack keeps the QP feasible when constraints conflict (for example in tight clusters), at the price of the guarantee: because of $\delta$, the radii are soft constraints: we claim no
+The bounded slack can relax conflicting constraints when the required relaxation is within its bound (otherwise the QP is infeasible and the fallback above is used), at the price of the guarantee: because of $\delta$, the radii are soft constraints: we claim no
 formal guarantee and report behaviour only.
 
 \subsection{Classical Controller}
@@ -214,7 +213,7 @@ comparison.
 
 \begin{table}[t]
 \centering
-\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Contacts are wall / agent counts over the whole run; clearance is the minimum inter-robot distance.}
+\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; clearance is the minimum inter-robot distance.}
 \label{tab:ceil}
 \footnotesize
 \setlength{\tabcolsep}{2.6pt}
@@ -234,21 +233,21 @@ maze & 4{,}800 & 4{,}000 & 25.0 & 3{,}961 & 316 & 1{,}108 & 0 & 0.26 \\
 In 3 of 5 worlds (warehouse, depot, cafe) ACR reached its plateau before 90\% of the run, so those budgets were long enough to see it level off; for the others the final value may still have been rising. The maze's figure should not be read as a success or a failure
 by itself: we did not measure how much of its bounding box is traversable, and
 the ACR denominator only excludes cells where a LiDAR return has registered an
-obstacle. The warehouse run recorded a very large wall-contact count over its
-long perimeter patrol after coverage saturated, which the contact metric
+obstacle. The warehouse run recorded a very large wall-proximity count over its
+long perimeter patrol after coverage saturated, which the proximity metric
 (sensor range below $0.14\,\si{m}$) makes easy to accumulate.
 
 \subsection{Team Size}
 Table~\ref{tab:sweep} varies the number of robots from 2 to 8 in each world for
 200 steps (one run per cell). Coverage generally rose with team size, though not
 monotonically (cafe, $N{=}3\to5$), and the 200-step horizon is far from the
-plateau in the larger worlds. Agent contacts occurred in 3 of 20 configurations,
+plateau in the larger worlds. Inter-robot proximity events occurred in 3 of 20 configurations,
 all at $N\ge5$ in the two smallest arenas (cafe and office). No other
 explanation for that pattern was tested.
 
 \begin{table}[t]
 \centering
-\caption{Exploratory single-run baseline: classical controller, 200 steps, one run per cell, ACR \% (agent contacts).}
+\caption{Exploratory single-run baseline: classical controller, 200 steps, one run per cell, discovered-map ACR \% (inter-robot proximity events).}
 \label{tab:sweep}
 \footnotesize
 \begin{tabular}{@{}lcccc@{}}
@@ -267,7 +266,7 @@ maze & 1.1 (0) & 3.2 (0) & 6.0 (0) & 10.0 (0) \\
 \subsection{Learned versus Classical}
 Table~\ref{tab:mx} compares the trained MAPPO policy (trained on the cafe,
 zero-shot elsewhere) with the classical controller and a random walk, one
-150-step episode per cell with three robots. In this single-episode matrix the classical controller had higher observed ACR than MAPPO in all five worlds. This single-episode matrix is exploratory;
+150-step episode per cell with three robots. In this single-episode matrix the classical controller had higher observed discovered-map ACR than MAPPO in all five worlds. This single-episode matrix is exploratory;
 the companion study~\cite{pandhe2026mappo} reports a 10-episode cafe
 comparison in which MAPPO's median coverage (14.5\%) was below both the
 classical controller's (38.6\%) and a random walk's (29.6\%); the
@@ -278,7 +277,7 @@ system with a minimally trained learned one, not two learned policies.
 
 \begin{table}[t]
 \centering
-\caption{Exploratory single-episode baseline: ACR \% after 150 steps, three robots, one episode per cell. MAPPO is one checkpoint (see text).}
+\caption{Exploratory single-episode baseline: Discovered-map ACR \% after 150 steps, three robots, one episode per cell. MAPPO results are evaluations of a single trained checkpoint and serve as an exploratory baseline (see Sec.~\ref{sec:testbed}).}
 \label{tab:mx}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
@@ -294,7 +293,7 @@ maze & 2.7 & 1.5 & 2.2 \\
 \end{tabular}
 \end{table}
 
-A reward ablation trained three MAPPO variants for 15 iterations with three
+The reward coefficients are overridable by environment variables, which we used for a reward ablation that trained three MAPPO variants for 15 iterations with three
 training seeds each. Averaged over seeds, coverage was 28.0\%, 31.0\% and 40.5\% for the baseline, a lower collision penalty and a higher
 discovery bonus. Paired tests across the three seeds did not reach
 $p<0.05$ for either variant, so we draw no conclusion about the rewards; see
@@ -302,12 +301,12 @@ the companion study for the analysis.
 
 \subsection{Safety Observations}
 Across the 20 sweep runs, the 25 matrix runs and a 27-episode ablation (72
-runs), agent contacts were absent in 69 of 72, while coverage
-ranged from 1.1\% to 98.6\% (across worlds and horizons), so the contact count did not distinguish weak
+runs), inter-robot proximity events were absent in 69 of 72, while coverage
+ranged from 1.1\% to 98.6\% (across worlds and horizons), so the event count did not distinguish weak
 from strong controllers. In the office run the minimum inter-robot distance
-was $0.38\,\si{m}$, below the $0.45\,\si{m}$ CBF separation buffer, with no contact,
-which is the behaviour expected of a soft constraint. Two one-off qualitative stress tests with moving hazards (head-on at $0.38\,\si{m/s}$ and crossing at $0.22\,\si{m/s}$) were
-run once each without contact; their raw traces are not archived.
+was $0.38\,\si{m}$, below the $0.45\,\si{m}$ CBF separation buffer, with no proximity event,
+consistent with the intended behaviour of a soft safety stack. Two one-off qualitative stress tests with moving hazards (head-on at $0.38\,\si{m/s}$ and crossing at $0.22\,\si{m/s}$) were
+run once each without a proximity event; their raw traces are not archived.
 
 %==============================================================================
 \section{Limitations}
@@ -316,7 +315,7 @@ run once each without contact; their raw traces are not archived.
 \begin{itemize}
   \item \textbf{Non-deterministic evaluation.} Three evaluations of one saved
         checkpoint with the same seed argument gave coverage between 24.6\%
-        and 37.8\%, and contact counts of 0 to 19; the cause was not isolated: greedy actions remove policy sampling noise, and we suspect simulator or runtime timing as a contributor, but physics scheduling, message ordering and reset state were not separately tested. The three repeats used one checkpoint on the cafe for 150 steps. Single-episode cells
+        and 37.8\%, and proximity-event counts of 0 to 19; the cause was not isolated: greedy actions remove policy sampling noise, and we suspect simulator or runtime timing as a contributor, but physics scheduling, message ordering and reset state were not separately tested. The three repeats used one checkpoint on the cafe for 150 steps. Single-episode cells
         (Tables~\ref{tab:sweep} and~\ref{tab:mx}) are descriptive only.
   \item \textbf{Soft safety margin; no formal guarantee.} See
         Sec.~\ref{sec:safety}. We did not measure how often or how much the
@@ -339,10 +338,10 @@ run once each without contact; their raw traces are not archived.
 \section{Conclusion}
 %==============================================================================
 MARS provides a documented testbed with archived code and per-run results. In the
-reported long reference runs the classical controller's coverage of the
-discovered map was high in four of five worlds, coverage generally grew with
+reported long reference runs the classical controller's discovered-map ACR
+was high in four of five worlds, coverage generally grew with
 team size in the exploratory sweep, and in the single-episode matrix the
-observed MAPPO ACR was lower than the classical controller's in all five
+observed MAPPO discovered-map ACR was lower than the classical controller's in all five
 worlds. These results are descriptive: evaluation is not deterministic, the
 learned and classical controllers differ in information and design, the safety
 margin is soft, and several architectural claims remain untested. We release
@@ -350,7 +349,7 @@ the code, per-run logs and scripts so that others can check and extend them.
 
 \paragraph*{Data availability.} Code, per-run results and scripts are in the
 project repository, archived at \url{https://doi.org/10.5281/zenodo.22758286}
-(directory \url{checkpoints/}); GitHub: \url{https://github.com/harsh-pandhe/MARS}. Raw traces of the two one-off hazard scenarios (Sec.~\ref{sec:results}) are not archived.
+(directory \url{checkpoints/}); the repository state described here is Git commit \texttt{7c41a00}, and the experiments were run at earlier development commits; GitHub: \url{https://github.com/harsh-pandhe/MARS}. Raw traces of the two one-off hazard scenarios (Sec.~\ref{sec:results}) are not archived.
 
 %==============================================================================
 \bibliographystyle{IEEEtran}
