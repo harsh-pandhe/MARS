@@ -41,7 +41,7 @@ partitioning with consensus-based auction claims within a $3\,\si{m}$ communicat
 range, and a behavior tree), a random walk, and a MAPPO policy with a
 permutation-invariant neighbor encoder and a centralized critic, across five
 Gazebo worlds. In long single reference runs the classical planner reached
-high discovered-map ACR (85.7--100\% in four worlds, 25.0\% in the maze),
+high discovered-map ACR (a metric whose denominator varies with obstacle discovery) (85.7--100\% in four worlds, 25.0\% in the maze),
 and in an exploratory single-episode matrix a trained MAPPO checkpoint had
 lower observed discovered-map ACR than the classical planner in all five worlds; the
 comparison is between an engineered system and a minimally trained reactive
@@ -118,7 +118,7 @@ where ``obstacle'' cells are those the robots have registered as obstacles, so
 the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
 counted when the minimum LiDAR range is below $0.14\,\si{m}$ (the approximate
 sensor-to-bumper distance); an \emph{inter-robot proximity event} when two robots are closer
-than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. Robots start from fixed spawn positions on a line 0.7\,m apart (offsets $0,-0.7,+0.7,-1.4,\dots$\,m along one axis from the world's spawn point), identical in every episode. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
+than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. Robots start from fixed spawn positions on a line 0.7\,m apart (offsets $0,-0.7,+0.7,-1.4,\dots$\,m along one axis from the world's spawn point), identical in every episode, with all robots sharing one initial heading (world yaw $-\pi/2$ in the cafe; per-world values are set in the spawn launch files). These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
 smaller than the filter's separation buffer (Sec.~\ref{sec:safety}), so a zero count
 does not show that the margin held.
 
@@ -143,7 +143,7 @@ $72^\circ$ of the heading, forward speed becomes $-0.05\,\si{m/s}$.
 with $-0.22\le v\le0.22$, $-1.0\le\omega\le1.0$ (the action bounds, enforced as variable bounds), $0\le\delta\le10$, $P=1000$ and $\gamma=2.0$. Barrier terms come from LiDAR
 returns within $0.6\,\si{m}$, evaluated at two lookahead points ($\pm0.12\,\si{m}$
 on the heading axis) with obstacle radius $0.20\,\si{m}$, and from neighbors
-within $1.2\,\si{m}$ with a separation buffer of $0.45\,\si{m}$ (not a physical radius). The neighbor term treats
+within $1.2\,\si{m}$ with a separation buffer of $0.45\,\si{m}$ (not a physical radius). The full construction of $h_k$, $A_k$ and $B_k$ is given by the released implementation (\texttt{cbf\_qp\_solver.py}). The neighbor term treats
 the neighbor's velocity as bounded and unmodeled. If the QP is infeasible the
 filter returns $(\min(0,v_{\text{nom}}),\omega_{\text{nom}})$.
 \emph{(3) Front safeguard.} Forward speed is set to $\min(0,v)$ if any of the
@@ -195,7 +195,7 @@ where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ the numbe
 of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbb{I}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbb{I}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
 point from a fixed per-world list of safe positions, reassigned on arrival; it
 is less informed than the classical controller's map-aware frontier targets. The policy is purely reactive: it has no recurrent state or local map, and no spatial-memory variant was trained.
-Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
+Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is therefore an archival baseline artifact, not a statistically representative MAPPO estimate. It is identified by the SHA-256 of its policy state file, \texttt{f07518b9\allowbreak 1630cb0e\allowbreak d153109d\allowbreak a320ae94\allowbreak 96a0f8dd\allowbreak 008c0448\allowbreak 6add1cfb\allowbreak 2aab6edb}. 
 
 %==============================================================================
 \section{Results}
@@ -209,20 +209,20 @@ records are archived (Data availability).
 
 \subsection{Long-Run Reference Runs of the Classical Controller}
 Table~\ref{tab:ceil} reports one long run per world with three robots. The
-step budget differs by world and was chosen to see where coverage levels off,
+step budget differs by world and was chosen to observe the late-run behavior of the discovered-map ACR,
 so ``steps to plateau'' is the first sampled step at which ACR came within
 0.5 points of its final value; it is not a controller-versus-controller
 comparison.
 
 \begin{table}[t]
 \centering
-\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; clearance is the minimum inter-robot distance. Steps are environment control steps; Dist.\ is cumulative path length summed over robots.}
+\caption{Classical controller, three robots, one long run per world (single-run reference values, not an established benchmark). Proximity events are wall / inter-robot counts (threshold proxies, not verified contacts) over the whole run; D-ACR is discovered-map ACR (\%); clearance is the minimum inter-robot distance. Steps are environment control steps; Dist.\ is cumulative path length summed over robots.}
 \label{tab:ceil}
 \footnotesize
-\setlength{\tabcolsep}{2.6pt}
+\setlength{\tabcolsep}{2.2pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
-World & Cells & Steps & ACR & Plateau & Dist.\,(m) & Wall & Agent & Clr.\ (m) \\
+World & Cells & Steps & D-ACR & Plateau & Dist.\,(m) & Wall & Agent & Clr.\ (m) \\
 \midrule
 warehouse & 9{,}375 & 9{,}050 & 100.0 & 7{,}660 & 1263 & 17{,}018 & 0 & 0.81 \\
 office & 3{,}500 & 3{,}500 & 98.2 & 3{,}466 & 377 & 0 & 0 & 0.38 \\
@@ -233,7 +233,7 @@ maze & 4{,}800 & 4{,}000 & 25.0 & 3{,}961 & 316 & 1{,}108 & 0 & 0.26 \\
 \end{tabular}
 \end{table}
 
-In 3 of 5 worlds (warehouse, depot, cafe) ACR reached its plateau before 90\% of the run, so those budgets were long enough to see it level off; for the others the final value may still have been rising. The maze's figure should not be read as a success or a failure
+In 3 of 5 worlds (warehouse, depot, cafe) the discovered-map ACR reached its observed plateau before 90\% of the run, so those runs showed late-run stabilization of the discovered-map ACR, although this does not establish saturation of physical coverage; for the others the final value may still have been rising. The maze's figure should not be read as a success or a failure
 by itself: we did not measure how much of its bounding box is traversable, and
 the ACR denominator only excludes cells where a LiDAR return has registered an
 obstacle. The warehouse run recorded a very large wall-proximity count over its
@@ -280,7 +280,7 @@ system with a minimally trained learned one, not two learned policies.
 
 \begin{table}[t]
 \centering
-\caption{Exploratory single-episode baseline: Discovered-map ACR \% after 150 steps, three robots, one episode per cell. MAPPO results are evaluations of a single trained checkpoint and serve as an exploratory baseline (see Sec.~\ref{sec:testbed}).}
+\caption{Exploratory single-episode baseline: Discovered-map ACR \% after 150 steps, three robots, one episode per cell. MAPPO and Random-Walk results are single stochastic realizations (MAPPO: one trained checkpoint) and serve as exploratory baselines (see Sec.~\ref{sec:testbed}).}
 \label{tab:mx}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
@@ -345,13 +345,13 @@ learned and classical controllers differ in information and design, the safety
 margin is soft, and several architectural claims remain untested. We release
 the code, per-run logs and scripts so that others can check and extend them.
 
-\paragraph*{Environment.} ROS\,2 Jazzy, Gazebo Harmonic, Ubuntu 24.04.5 LTS, AMD Ryzen~5 7600 (6 cores, 12 threads), about 30\,GB RAM, Ray RLlib 2.55.1 (PyTorch, ModelV2 API stack), OSQP, PettingZoo parallel API; Gazebo seed 42; in the cafe world the physics step is 1\,ms at a real-time factor of 1. Licence: Apache-2.0.
+\paragraph*{Environment.} ROS\,2 Jazzy, Gazebo Harmonic, Ubuntu 24.04.5 LTS, AMD Ryzen~5 7600 (6 cores, 12 threads), about 30\,GB RAM, Ray RLlib 2.55.1 (PyTorch, ModelV2 API stack), OSQP, PettingZoo parallel API; Gazebo seed 42 (control rate, sensor rates, clock and reset synchronization are set in the repository's launch files and not separately listed here; they were not isolated as a source of nondeterminism); in the cafe world the physics step is 1\,ms at a real-time factor of 1. Licence: Apache-2.0.
 
 \paragraph*{AI assistance disclosure.} Generative AI tools, including Anthropic's Claude, were used during project development and manuscript preparation for code and analysis-script assistance, language editing, structural critique and identification of potential methodological or statistical issues. The author reviewed and verified the results against the archived data and is solely responsible for the methodology, experiments, analysis and conclusions.
 
 \paragraph*{Data availability.} Code, per-run results and scripts are in the
 project repository, archived at \url{https://doi.org/10.5281/zenodo.22758286}
-(directory \url{checkpoints/}); the repository state described here is Git commit \texttt{7c41a00}, and the experiments were run at earlier development commits; GitHub: \url{https://github.com/harsh-pandhe/MARS}. Raw traces of the two one-off hazard scenarios (Sec.~\ref{sec:results}) are not archived.
+(directory \url{checkpoints/}); the repository state described here is Git commit \texttt{7c41a00}, the exact experimental commits could not be recovered (the experiments were run at earlier development commits), so this is the released state corresponding to the archived artifacts; GitHub: \url{https://github.com/harsh-pandhe/MARS}. Raw traces of the two one-off hazard scenarios (Sec.~\ref{sec:results}) are not archived.
 
 %==============================================================================
 \bibliographystyle{IEEEtran}
