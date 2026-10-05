@@ -104,7 +104,7 @@ companion study~\cite{pandhe2026mappo} examines the MAPPO baseline in depth.
 \label{sec:testbed}
 %==============================================================================
 \subsection{Platform and Metrics}
-Three TurtleBot3 Waffle robots (differential drive, 24-sector LiDAR, odometry)
+TurtleBot3 Waffle robots (differential drive, 24-sector LiDAR, odometry), instantiated in teams of $N\in\{2,3,5,8\}$ for the classical-controller sweep and $N=3$ for the learned experiments,
 run in Gazebo Harmonic under ROS\,2 Jazzy~\cite{macenski2022ros2,gazebo}. The
 simulator is wrapped as a PettingZoo~\cite{terry2021pettingzoo} parallel
 environment, so any code that speaks the standard multi-agent parallel API can drive the simulator without touching ROS\,2 internals; our own training uses it through RLlib. The workspace is a grid of $0.4\,\si{m}$ cells. A cell is marked
@@ -118,7 +118,7 @@ where ``obstacle'' cells are those the robots have registered as obstacles, so
 the denominator depends on what has been discovered. ACR here is therefore a \emph{discovered-map} metric: controllers that discover obstacles at different rates have different denominators, so ACR is not a fixed-denominator measure of physical coverage, and a controller that discovers few obstacles keeps a larger denominator (lowering its ACR), while one that finds obstacles quickly, for example by hugging walls, shrinks it early. A ground-truth-denominator metric is not reported (Sec.~\ref{sec:limits}). A \emph{wall-proximity event} is
 counted when the minimum LiDAR range is below $0.14\,\si{m}$ (the approximate
 sensor-to-bumper distance); an \emph{inter-robot proximity event} when two robots are closer
-than $0.20\,\si{m}$ after the first 15 steps. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
+than $0.20\,\si{m}$ after the first 15 steps. Events are counted per robot per control step. These are threshold-based sensor proxies, not verified physical contacts. The inter-robot threshold is
 smaller than the filter's separation buffer (Sec.~\ref{sec:safety}), so a zero count
 does not show that the margin held.
 
@@ -140,7 +140,7 @@ $72^\circ$ of the heading, forward speed becomes $-0.05\,\si{m/s}$.
 \begin{equation}
 \begin{aligned}\min_{v,\omega,\delta}\ &(v-v_{\text{nom}})^2+0.05(\omega-\omega_{\text{nom}})^2+P\delta^2\\ \text{s.t.}\ &A_kv+B_k\omega+\delta\ge-\gamma h_k,\end{aligned}
 \end{equation}
-with $0\le\delta\le10$, $P=1000$ and $\gamma=2.0$. Barrier terms come from LiDAR
+with $-0.22\le v\le0.22$, $-1.0\le\omega\le1.0$ (the action bounds, enforced as variable bounds), $0\le\delta\le10$, $P=1000$ and $\gamma=2.0$. Barrier terms come from LiDAR
 returns within $0.6\,\si{m}$, evaluated at two lookahead points ($\pm0.12\,\si{m}$
 on the heading axis) with obstacle radius $0.20\,\si{m}$, and from neighbors
 within $1.2\,\si{m}$ with a separation buffer of $0.45\,\si{m}$ (not a physical radius). The neighbor term treats
@@ -157,7 +157,7 @@ stack has these components:
 \begin{itemize}
   \item \textbf{Map sharing:} robots within $3.0\,\si{m}$ merge visited grids by
         bitwise OR, a range-limited approximation of gossip consensus; a global
-        grid is kept only for monitoring and for computing ACR.
+        grid, accumulated from all robots' LiDAR returns and not exposed to the controllers, is kept only for monitoring and for computing ACR; its obstacle set is the ACR denominator's obstacle set.
   \item \textbf{Target selection:} frontier cells are the nearest unvisited
         candidates inside the robot's own Voronoi cell relative to sensed
         neighbors; duplicate claims are resolved by a consensus-based auction among
@@ -170,6 +170,9 @@ stack has these components:
         frontier exploration, and a boundary-aware wander.
   \item \textbf{Localization:} a correlative scan matcher corrects odometry drift.
 \end{itemize}
+
+\subsection{Random-Walk Controller}
+At each step every robot's command is drawn uniformly from the action box $[-0.22,0.22]\times[-1.0,1.0]$ (the environment's \texttt{action\_space.sample()}), independently per robot and step, with no observation or goal information, and then passes through the same three-stage safety stack. The Gazebo seed is fixed (42); no separate seed for the action sampler is recorded.
 
 \subsection{MAPPO Baseline}
 A single policy is shared by all robots. Each neighbor's (distance, bearing)
@@ -185,14 +188,14 @@ train batch 700, $90$-step episodes, minibatch 64, 5 epochs, learning rate
 $10^{-4}$, clip 0.2, $\gamma=0.99$, GAE $\lambda=0.95$ and entropy
 coefficient $0.01$. The per-step reward is
 \begin{multline}
-r_i=-0.01+5.0\,\Delta d_i+4.0\,n_{\text{new}}+20\,\mathbb{1}[\text{goal}]\\
--8.0\,\mathbb{1}[\text{wall}]-\rho_i,
+r_i=-0.01+5.0\,\Delta d_i+4.0\,n_{\text{new}}+20\,\mathbf{1}[\text{goal}]\\
+-8.0\,\mathbf{1}[\text{wall}]-\rho_i,
 \end{multline}
 where $\Delta d_i$ is the reduction in goal distance, $n_{\text{new}}$ the number
-of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbb{1}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbb{1}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
+of cells newly visited by any robot this step, and $\rho_i=0.5\,\mathbf{1}[d_{\min,i}<0.5\,\si{m}]+10\,\mathbf{1}[d_{\min,i}<0.20\,\si{m}]$ with $d_{\min,i}$ the distance to the nearest other robot. The discovery term $n_{\text{new}}$ is a team-level quantity used only in the training reward; it is not part of the decentralized observation. The goal is a random
 point from a fixed per-world list of safe positions, reassigned on arrival; it
 is less informed than the classical controller's map-aware frontier targets. The policy is purely reactive: it has no recurrent state or local map, and no spatial-memory variant was trained.
-Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The reward ablation below used separately trained variants.
+Evaluation uses greedy actions. All learned results use a single archived checkpoint (\texttt{checkpoints/mappo\_baseline}, trained on the cafe); the training seed and iteration count of that checkpoint are not recorded in its archived metadata and no checkpoint-selection procedure was applied, so no across-seed estimate is claimed for it. The checkpoint is identified by the SHA-256 of its policy state, \texttt{f07518b9\dots ab6edb}. 
 
 %==============================================================================
 \section{Results}
@@ -219,7 +222,7 @@ comparison.
 \setlength{\tabcolsep}{2.6pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
-World & Cells & Steps & ACR & Plateau & Dist. & Wall & Agent & Clr.\ (m) \\
+World & Cells & Steps & ACR & Plateau & Dist.\,(m) & Wall & Agent & Clr.\ (m) \\
 \midrule
 warehouse & 9{,}375 & 9{,}050 & 100.0 & 7{,}660 & 1263 & 17{,}018 & 0 & 0.81 \\
 office & 3{,}500 & 3{,}500 & 98.2 & 3{,}466 & 377 & 0 & 0 & 0.38 \\
@@ -293,15 +296,10 @@ maze & 2.7 & 1.5 & 2.2 \\
 \end{tabular}
 \end{table}
 
-The reward coefficients are overridable by environment variables, which we used for a reward ablation that trained three MAPPO variants for 15 iterations with three
-training seeds each. Averaged over seeds, coverage was 28.0\%, 31.0\% and 40.5\% for the baseline, a lower collision penalty and a higher
-discovery bonus. Paired tests across the three seeds did not reach
-$p<0.05$ for either variant, so we draw no conclusion about the rewards; see
-the companion study for the analysis.
+The reward coefficients are exposed as environment variables, which allows reward-shaping ablations without editing the environment; an exploratory ablation of three variants (three training seeds each, no variant significantly different at $p<0.05$) is analyzed in the companion study~\cite{pandhe2026mappo}.
 
 \subsection{Safety Observations}
-Across the 20 sweep runs, the 25 matrix runs and a 27-episode ablation (72
-runs), inter-robot proximity events were absent in 69 of 72, while coverage
+Across these heterogeneous exploratory runs (20 sweep runs, 25 matrix runs and a 27-episode ablation, 72 in total), inter-robot proximity events were absent in 69 of 72, while coverage
 ranged from 1.1\% to 98.6\% (across worlds and horizons), so the event count did not distinguish weak
 from strong controllers. In the office run the minimum inter-robot distance
 was $0.38\,\si{m}$, below the $0.45\,\si{m}$ CBF separation buffer, with no proximity event,
@@ -346,6 +344,10 @@ worlds. These results are descriptive: evaluation is not deterministic, the
 learned and classical controllers differ in information and design, the safety
 margin is soft, and several architectural claims remain untested. We release
 the code, per-run logs and scripts so that others can check and extend them.
+
+\paragraph*{Environment.} ROS\,2 Jazzy, Gazebo Harmonic, Ubuntu 24.04.5 LTS, AMD Ryzen~5 7600 (6 cores, 12 threads), about 30\,GB RAM, Ray RLlib 2.55.1 (PyTorch, ModelV2 API stack), OSQP, PettingZoo parallel API; Gazebo seed 42.
+
+\paragraph*{AI assistance disclosure.} AI tools (Anthropic's Claude) were used during the project for code and analysis-script assistance and for language editing and structural critique of this manuscript. The author reviewed and verified the results against the archived data and is solely responsible for the methodology, experiments, analysis and conclusions.
 
 \paragraph*{Data availability.} Code, per-run results and scripts are in the
 project repository, archived at \url{https://doi.org/10.5281/zenodo.22758286}
